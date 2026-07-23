@@ -66,6 +66,9 @@ dependencies {
     implementation("androidx.credentials:credentials-play-services-auth:1.3.0")
     implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
 
+    // AppCompat needed for Theme.AppCompat base theme
+    implementation("androidx.appcompat:appcompat:1.7.0")
+
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
