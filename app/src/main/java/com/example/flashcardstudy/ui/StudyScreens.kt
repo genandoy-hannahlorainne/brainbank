@@ -576,11 +576,13 @@ fun FlashcardListScreen(
     onStartReview: () -> Unit,
     onBack: () -> Unit,
     onAiGenerate: () -> Unit = {},
+    onImportFile: () -> Unit = {},
 ) {
     val flashcards by viewModel.flashcards.collectAsStateWithLifecycle()
     val groups by viewModel.groups.collectAsStateWithLifecycle()
 
     var showEditor by rememberSaveable { mutableStateOf(false) }
+    var showAddSheet by rememberSaveable { mutableStateOf(false) }
     var editingFlashcardId by rememberSaveable { mutableStateOf<Long?>(null) }
     var question by rememberSaveable { mutableStateOf("") }
     var answer by rememberSaveable { mutableStateOf("") }
@@ -614,15 +616,9 @@ fun FlashcardListScreen(
             )
         },
         floatingActionButton = {
-            if (flashcards.isNotEmpty()) {
-                FloatingActionButton(onClick = {
-                    editingFlashcardId = null
-                    question = ""
-                    answer = ""
-                    showEditor = true
-                }) {
-                    Icon(Icons.Default.Add, contentDescription = "Add flashcard")
-                }
+            // Always show FAB so user can add cards even when deck already has cards
+            FloatingActionButton(onClick = { showAddSheet = true }) {
+                Icon(Icons.Default.Add, contentDescription = "Add cards")
             }
         },
     ) { paddingValues ->
@@ -634,12 +630,8 @@ fun FlashcardListScreen(
                     .padding(24.dp),
                 categoryName = category.name,
                 accentColor = accentColor,
-                onAddClick = {
-                    editingFlashcardId = null
-                    question = ""
-                    answer = ""
-                    showEditor = true
-                },
+                onAddManually = { showAddSheet = true },
+                onImportFile = onImportFile,
                 onAiGenerate = onAiGenerate,
             )
         } else {
@@ -687,6 +679,30 @@ fun FlashcardListScreen(
         }
     }
 
+    // ── "Add cards" choice sheet ──────────────────────────────────────────
+    if (showAddSheet) {
+        AddCardsSheet(
+            accentColor = accentColor,
+            onDismiss = { showAddSheet = false },
+            onTypeManually = {
+                showAddSheet = false
+                editingFlashcardId = null
+                question = ""
+                answer = ""
+                showEditor = true
+            },
+            onImportFile = {
+                showAddSheet = false
+                onImportFile()
+            },
+            onAiGenerate = {
+                showAddSheet = false
+                onAiGenerate()
+            },
+        )
+    }
+
+    // ── Manual card editor dialog ─────────────────────────────────────────
     if (showEditor) {
         AlertDialog(
             onDismissRequest = {
@@ -979,9 +995,14 @@ private fun EmptyFlashcardState(
     modifier: Modifier = Modifier,
     categoryName: String,
     accentColor: Color,
-    onAddClick: () -> Unit,
+    onAddManually: () -> Unit,
+    onImportFile: () -> Unit = {},
     onAiGenerate: () -> Unit = {},
 ) {
+    // Show the same AddCardsSheet that the FAB uses, so the experience is
+    // consistent whether the deck is empty or already has cards.
+    var showSheet by remember { mutableStateOf(false) }
+
     Column(
         modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -992,7 +1013,7 @@ private fun EmptyFlashcardState(
                 .size(148.dp)
                 .clip(MaterialTheme.shapes.extraLarge)
                 .background(accentColor.copy(alpha = 0.16f))
-                .clickable(onClick = onAddClick),
+                .clickable { showSheet = true },
             contentAlignment = Alignment.Center,
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -1008,13 +1029,140 @@ private fun EmptyFlashcardState(
             text = "Add your first card to start studying $categoryName.",
             style = MaterialTheme.typography.bodyMedium,
         )
-        Spacer(modifier = Modifier.height(20.dp))
+        Spacer(modifier = Modifier.height(24.dp))
+
+        // Single "Add cards" button — opens the same picker sheet as the FAB
         Button(
-            onClick = onAiGenerate,
-            colors = ButtonDefaults.buttonColors(containerColor = BrandPrimary),
+            onClick = { showSheet = true },
+            colors = ButtonDefaults.buttonColors(containerColor = accentColor),
             shape = RoundedCornerShape(16.dp),
         ) {
-            Text(text = "✨ Generate with AI")
+            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(text = "Add cards")
+        }
+    }
+
+    if (showSheet) {
+        AddCardsSheet(
+            accentColor = accentColor,
+            onDismiss = { showSheet = false },
+            onTypeManually = {
+                showSheet = false
+                onAddManually()
+            },
+            onImportFile = {
+                showSheet = false
+                onImportFile()
+            },
+            onAiGenerate = {
+                showSheet = false
+                onAiGenerate()
+            },
+        )
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// "Add cards" choice sheet — shown when user taps FAB inside a deck
+// ─────────────────────────────────────────────────────────────────────────────
+
+@Composable
+private fun AddCardsSheet(
+    accentColor: Color,
+    onDismiss: () -> Unit,
+    onTypeManually: () -> Unit,
+    onImportFile: () -> Unit,
+    onAiGenerate: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(text = "Add cards", fontWeight = FontWeight.SemiBold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    text = "How would you like to add flashcards?",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+
+                // Option 1 — Type manually
+                AddCardOption(
+                    emoji = "✏️",
+                    title = "Type manually",
+                    subtitle = "Write your own question & answer",
+                    color = accentColor,
+                    onClick = onTypeManually,
+                )
+
+                // Option 2 — Import from file
+                AddCardOption(
+                    emoji = "📂",
+                    title = "Import from file",
+                    subtitle = "PDF, image, or document — AI generates cards",
+                    color = Color(0xFF1976D2),
+                    onClick = onImportFile,
+                )
+
+                // Option 3 — AI topic
+                AddCardOption(
+                    emoji = "✨",
+                    title = "Generate with AI",
+                    subtitle = "Type a topic, AI writes the cards",
+                    color = Color(0xFF7B1FA2),
+                    onClick = onAiGenerate,
+                )
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(text = "Cancel") }
+        },
+    )
+}
+
+@Composable
+private fun AddCardOption(
+    emoji: String,
+    title: String,
+    subtitle: String,
+    color: Color,
+    onClick: () -> Unit,
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = color.copy(alpha = 0.08f)),
+        elevation = CardDefaults.cardElevation(0.dp),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(text = emoji, style = MaterialTheme.typography.titleLarge)
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = color,
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                )
+            }
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
+                contentDescription = null,
+                tint = color.copy(alpha = 0.5f),
+                modifier = Modifier.size(14.dp),
+            )
         }
     }
 }

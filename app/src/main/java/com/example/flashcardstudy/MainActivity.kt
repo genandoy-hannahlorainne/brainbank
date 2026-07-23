@@ -36,6 +36,9 @@ import com.example.flashcardstudy.notifications.NotificationScheduler
 import com.example.flashcardstudy.ui.CategoryListScreen
 import com.example.flashcardstudy.ui.CategoryListViewModel
 import com.example.flashcardstudy.ui.CategoryReviewViewModel
+import com.example.flashcardstudy.ui.DeckImportStep
+import com.example.flashcardstudy.ui.DeckImportUiState
+import com.example.flashcardstudy.ui.DeckImportViewModel
 import com.example.flashcardstudy.ui.FileUploadScreen
 import com.example.flashcardstudy.ui.FlashcardListScreen
 import com.example.flashcardstudy.ui.FlashcardListViewModel
@@ -208,6 +211,7 @@ private fun MainContent(
     var isReviewing by remember { mutableStateOf(false) }
     var isShowingStats by remember { mutableStateOf(false) }
     var isImportingFile by remember { mutableStateOf(false) }
+    var isImportingIntoDeck by remember { mutableStateOf(false) }
     var showTopicDialog by remember { mutableStateOf(false) }
     var topicInput by remember { mutableStateOf("") }
     var isAiGeneratingForDeck by remember { mutableStateOf(false) }
@@ -235,6 +239,22 @@ private fun MainContent(
         factory = TopicGenerateViewModel.Factory(BuildConfig.GROQ_API_KEY),
     )
     val topicGenerateState by topicGenerateViewModel.state.collectAsStateWithLifecycle()
+
+    // In-deck file import ViewModel — scoped to the selected category.
+    // Recreated whenever the selected category changes.
+    val deckImportViewModel: DeckImportViewModel? =
+        if (selectedCategory != null) {
+            viewModel<DeckImportViewModel>(
+                key = "deck-import-${selectedCategory!!.id}",
+                factory = DeckImportViewModel.Factory(
+                    selectedCategory!!,
+                    BuildConfig.GROQ_API_KEY,
+                ),
+            )
+        } else null
+    val deckImportUiState by (deckImportViewModel?.uiState
+        ?.collectAsStateWithLifecycle()
+        ?: remember { mutableStateOf(DeckImportUiState()) })
 
     // Keep a stable reference to the flashcard list VM for the selected category.
     // Both the FlashcardListScreen and the AI review screen need it so that
@@ -366,14 +386,78 @@ private fun MainContent(
 
         // ── Flashcard list for a category ────────────────────────────────
         selectedCategory != null -> {
-            BackHandler { selectedCategory = null }
-            FlashcardListScreen(
-                category = selectedCategory!!,
-                viewModel = flashcardListViewModel!!,
-                onStartReview = { isReviewing = true },
-                onBack = { selectedCategory = null },
-                onAiGenerate = { showTopicDialog = true },
-            )
+            val category = selectedCategory!!
+            val vm = flashcardListViewModel!!
+            val dim = deckImportViewModel
+
+            // ── In-deck file import sub-flow ──────────────────────────────
+            if (isImportingIntoDeck && dim != null) {
+                when (val step = deckImportUiState.step) {
+                    is DeckImportStep.FileSelection -> {
+                        BackHandler {
+                            dim.backToFileSelection()
+                            isImportingIntoDeck = false
+                        }
+                        FileUploadScreen(
+                            onBack = {
+                                dim.backToFileSelection()
+                                isImportingIntoDeck = false
+                            },
+                            onProceed = { text, source ->
+                                dim.generateCards(text, source)
+                            },
+                            externalError = deckImportUiState.errorMessage,
+                            onExternalErrorDismissed = { dim.clearError() },
+                            autoLaunch = true,
+                        )
+                    }
+
+                    is DeckImportStep.Generating -> {
+                        BackHandler {}
+                        GeneratingScreen()
+                    }
+
+                    is DeckImportStep.ReviewCards -> {
+                        BackHandler { dim.backToFileSelection() }
+                        val reviewVm = viewModel<GeneratedCardsReviewViewModel>(
+                            key = "deck-import-review-${category.id}",
+                            factory = GeneratedCardsReviewViewModel.Factory(
+                                effectiveRepository,
+                                category,
+                                step.cards,
+                                step.source,
+                            ),
+                        )
+                        GeneratedCardsReviewScreen(
+                            viewModel = reviewVm,
+                            onBack = { dim.backToFileSelection() },
+                            onSaved = {
+                                dim.onCardsSaved()
+                                isImportingIntoDeck = false
+                                dim.reset()
+                                vm.refreshFlashcards()
+                            },
+                        )
+                    }
+
+                    is DeckImportStep.Done -> {
+                        // Shouldn't linger here — reset immediately
+                        isImportingIntoDeck = false
+                        dim.reset()
+                    }
+                }
+            } else {
+                // ── Normal deck view ──────────────────────────────────────
+                BackHandler { selectedCategory = null }
+                FlashcardListScreen(
+                    category = category,
+                    viewModel = vm,
+                    onStartReview = { isReviewing = true },
+                    onBack = { selectedCategory = null },
+                    onAiGenerate = { showTopicDialog = true },
+                    onImportFile = { isImportingIntoDeck = true },
+                )
+            }
         }
 
         // ── Dashboard (default) ──────────────────────────────────────────

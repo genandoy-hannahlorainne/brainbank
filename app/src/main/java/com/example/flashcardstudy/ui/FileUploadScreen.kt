@@ -29,6 +29,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
@@ -60,6 +61,12 @@ fun FileUploadScreen(
     onProceed: (String, CardSource) -> Unit,
     externalError: String? = null,
     onExternalErrorDismissed: () -> Unit = {},
+    /**
+     * When true the system file picker opens immediately on first composition.
+     * Use this for the in-deck import flow so the user doesn't have to tap
+     * an extra "Choose file" button after already choosing "Import from file".
+     */
+    autoLaunch: Boolean = false,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -71,11 +78,17 @@ fun FileUploadScreen(
     var isLoading by rememberSaveable { mutableStateOf(false) }
     var localError by rememberSaveable { mutableStateOf<String?>(null) }
     var showProceedDialog by rememberSaveable { mutableStateOf(false) }
+    // Tracks whether we already auto-launched so we don't re-open on recomposition
+    var hasAutoLaunched by rememberSaveable { mutableStateOf(false) }
 
     val pickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent(),
     ) { uri: Uri? ->
-        if (uri == null) return@rememberLauncherForActivityResult
+        if (uri == null) {
+            // User cancelled the picker — go back when in auto-launch mode
+            if (autoLaunch && extractedText.isBlank()) onBack()
+            return@rememberLauncherForActivityResult
+        }
         scope.launch {
             isLoading = true
             localError = null
@@ -90,6 +103,14 @@ fun FileUploadScreen(
             } finally {
                 isLoading = false
             }
+        }
+    }
+
+    // Auto-open the picker once on first composition when requested
+    LaunchedEffect(Unit) {
+        if (autoLaunch && !hasAutoLaunched) {
+            hasAutoLaunched = true
+            pickerLauncher.launch("*/*")
         }
     }
 
