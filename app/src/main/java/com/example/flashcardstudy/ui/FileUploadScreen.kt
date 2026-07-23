@@ -13,12 +13,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -27,11 +28,9 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -47,13 +46,16 @@ import kotlinx.coroutines.launch
 fun FileUploadScreen(
     onBack: () -> Unit,
     onProceed: (String) -> Unit,
+    // Error coming from the parent (e.g. Gemini API failure) — different from local extract error
+    externalError: String? = null,
+    onExternalErrorDismissed: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var extractedText by rememberSaveable { mutableStateOf("") }
     var fileName by rememberSaveable { mutableStateOf("") }
     var isLoading by rememberSaveable { mutableStateOf(false) }
-    var errorMessage by rememberSaveable { mutableStateOf<String?>(null) }
+    var localError by rememberSaveable { mutableStateOf<String?>(null) }
     var showProceedDialog by rememberSaveable { mutableStateOf(false) }
 
     val pickerLauncher = rememberLauncherForActivityResult(
@@ -62,13 +64,13 @@ fun FileUploadScreen(
         if (uri == null) return@rememberLauncherForActivityResult
         scope.launch {
             isLoading = true
-            errorMessage = null
+            localError = null
             extractedText = ""
             fileName = uri.lastPathSegment?.substringAfterLast('/') ?: "Selected file"
             try {
                 extractedText = FileTextExtractor.extractRawText(context, uri)
             } catch (exception: Exception) {
-                errorMessage = exception.message ?: "Failed to extract text from the selected file."
+                localError = exception.message ?: "Failed to extract text from the selected file."
             } finally {
                 isLoading = false
             }
@@ -82,7 +84,7 @@ fun FileUploadScreen(
                 title = { Text(text = "Import File") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
             )
@@ -129,17 +131,29 @@ fun FileUploadScreen(
                 Text(text = fileName, style = MaterialTheme.typography.labelLarge)
             }
 
-            if (errorMessage != null) {
+            // Local extraction error
+            if (localError != null) {
                 Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
                     Text(
-                        text = errorMessage.orEmpty(),
+                        text = localError.orEmpty(),
                         modifier = Modifier.padding(16.dp),
                         color = MaterialTheme.colorScheme.onErrorContainer,
                     )
                 }
             }
 
-            if (fileName.isNotBlank() && extractedText.isBlank() && !isLoading && errorMessage == null) {
+            // External error from Gemini API (passed from parent)
+            if (externalError != null) {
+                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
+                    Text(
+                        text = externalError.orEmpty(),
+                        modifier = Modifier.padding(16.dp),
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                    )
+                }
+            }
+
+            if (fileName.isNotBlank() && extractedText.isBlank() && !isLoading && localError == null) {
                 Text(text = "No text was found in the selected file.")
             }
 
@@ -168,16 +182,16 @@ fun FileUploadScreen(
     if (showProceedDialog) {
         AlertDialog(
             onDismissRequest = { showProceedDialog = false },
-            title = { Text(text = "Proceed with extracted text?") },
-            text = { Text(text = "The current raw text preview will be passed to the next step.") },
+            title = { Text(text = "Generate flashcards?") },
+            text = { Text(text = "AI will generate question & answer cards from your document.") },
             confirmButton = {
                 TextButton(
                     onClick = {
                         showProceedDialog = false
-                        onProceed(extractedText)
+                        onProceed(extractedText)   // ← triggers ImportFlowViewModel.generateCards()
                     }
                 ) {
-                    Text(text = "Proceed")
+                    Text(text = "Generate")
                 }
             },
             dismissButton = {

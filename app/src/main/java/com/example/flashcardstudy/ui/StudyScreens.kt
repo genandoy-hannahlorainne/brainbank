@@ -320,7 +320,7 @@ private fun DashboardHeader(
             )
             .statusBarsPadding()
             .padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 32.dp),
-    ) {
+    ) { 
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth(),
@@ -714,6 +714,38 @@ fun ReviewScreen(
     onBack: () -> Unit,
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    ReviewScreenContent(
+        uiState = uiState,
+        onFlip = { viewModel.flipCard() },
+        onGrade = { viewModel.gradeCurrentCard(it) },
+        onBack = onBack,
+    )
+}
+
+/** Overload for category-scoped review (used right after import). */
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+fun ReviewScreen(
+    viewModel: CategoryReviewViewModel,
+    onBack: () -> Unit,
+) {
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    ReviewScreenContent(
+        uiState = uiState,
+        onFlip = { viewModel.flipCard() },
+        onGrade = { viewModel.gradeCurrentCard(it) },
+        onBack = onBack,
+    )
+}
+
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+private fun ReviewScreenContent(
+    uiState: ReviewUiState,
+    onFlip: () -> Unit,
+    onGrade: (ReviewGrade) -> Unit,
+    onBack: () -> Unit,
+) {
     val currentCard = uiState.cards.getOrNull(uiState.currentIndex)
     val cardRotationY by animateFloatAsState(
         targetValue = if (uiState.isFlipped) 180f else 0f,
@@ -770,7 +802,7 @@ fun ReviewScreen(
                         this.cameraDistance = 12f * density
                     }
                     .clip(MaterialTheme.shapes.extraLarge)
-                    .clickable(onClick = { viewModel.flipCard() }),
+                    .clickable(onClick = { onFlip() }),
                 contentAlignment = Alignment.Center,
             ) {
                 if (!isBackVisible) {
@@ -796,19 +828,19 @@ fun ReviewScreen(
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     ReviewGradeRow(
                         label = "Again",
-                        onClick = { viewModel.gradeCurrentCard(ReviewGrade.AGAIN) },
+                        onClick = { onGrade(ReviewGrade.AGAIN) },
                     )
                     ReviewGradeRow(
                         label = "Hard",
-                        onClick = { viewModel.gradeCurrentCard(ReviewGrade.HARD) },
+                        onClick = { onGrade(ReviewGrade.HARD) },
                     )
                     ReviewGradeRow(
                         label = "Good",
-                        onClick = { viewModel.gradeCurrentCard(ReviewGrade.GOOD) },
+                        onClick = { onGrade(ReviewGrade.GOOD) },
                     )
                     ReviewGradeRow(
                         label = "Easy",
-                        onClick = { viewModel.gradeCurrentCard(ReviewGrade.EASY) },
+                        onClick = { onGrade(ReviewGrade.EASY) },
                     )
                 }
             } else {

@@ -16,9 +16,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.core.app.ActivityCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.flashcardstudy.BuildConfig
 import com.example.flashcardstudy.auth.GoogleAuthManager
 import com.example.flashcardstudy.auth.LoginScreen
 import com.example.flashcardstudy.auth.LoginViewModel
@@ -30,9 +32,14 @@ import com.example.flashcardstudy.notifications.NotificationHelper
 import com.example.flashcardstudy.notifications.NotificationScheduler
 import com.example.flashcardstudy.ui.CategoryListScreen
 import com.example.flashcardstudy.ui.CategoryListViewModel
+import com.example.flashcardstudy.ui.CategoryReviewViewModel
 import com.example.flashcardstudy.ui.FileUploadScreen
 import com.example.flashcardstudy.ui.FlashcardListScreen
 import com.example.flashcardstudy.ui.FlashcardListViewModel
+import com.example.flashcardstudy.ui.GeneratingScreen
+import com.example.flashcardstudy.ui.ImportFlowStep
+import com.example.flashcardstudy.ui.ImportFlowViewModel
+import com.example.flashcardstudy.ui.NameDeckScreen
 import com.example.flashcardstudy.ui.ProfileScreen
 import com.example.flashcardstudy.ui.ReviewScreen
 import com.example.flashcardstudy.ui.ReviewViewModel
@@ -173,7 +180,7 @@ private fun BrainBankApp(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Main app content  (existing screens unchanged)
+// Main app content
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
@@ -187,7 +194,6 @@ private fun MainContent(
     var isShowingStats by remember { mutableStateOf(false) }
     var isImportingFile by remember { mutableStateOf(false) }
 
-    // Guest users get an in-memory-only repository wrapper so nothing persists
     val effectiveRepository = remember(session) {
         if (session is UserSession.Guest) repository.asReadOnlyGuestRepository()
         else repository
@@ -202,48 +208,119 @@ private fun MainContent(
     val statsViewModel = viewModel<StatsViewModel>(
         factory = StatsViewModel.Factory(effectiveRepository),
     )
+    val importFlowViewModel = viewModel<ImportFlowViewModel>(
+        factory = ImportFlowViewModel.Factory(effectiveRepository, BuildConfig.GROQ_API_KEY),
+    )
+    val importUiState by importFlowViewModel.uiState.collectAsStateWithLifecycle()
 
-    if (isImportingFile) {
-        BackHandler { isImportingFile = false }
-        FileUploadScreen(
-            onBack = { isImportingFile = false },
-            onProceed = { isImportingFile = false },
-        )
-    } else if (isReviewing) {
-        BackHandler { isReviewing = false }
-        ReviewScreen(
-            viewModel = reviewViewModel,
-            onBack = { isReviewing = false },
-        )
-    } else if (isShowingStats) {
-        BackHandler { isShowingStats = false }
-        StatsScreen(
-            viewModel = statsViewModel,
-            onBack = { isShowingStats = false },
-        )
-    } else if (selectedCategory == null) {
-        // Dashboard — back exits the app (no handler, let system handle it)
-        CategoryListScreen(
-            viewModel = categoryViewModel,
-            statsViewModel = statsViewModel,
-            session = session,
-            onStartReview = { isReviewing = true },
-            onOpenStats = { isShowingStats = true },
-            onOpenImport = { isImportingFile = true },
-            onOpenProfile = onOpenProfile,
-            onCategorySelected = { selectedCategory = it },
-        )
-    } else {
-        BackHandler { selectedCategory = null }
-        val flashcardViewModel = viewModel<FlashcardListViewModel>(
-            key = "flashcards-${selectedCategory!!.id}",
-            factory = FlashcardListViewModel.Factory(effectiveRepository, selectedCategory!!.id),
-        )
-        FlashcardListScreen(
-            category = selectedCategory!!,
-            viewModel = flashcardViewModel,
-            onStartReview = { isReviewing = true },
-            onBack = { selectedCategory = null },
-        )
+    when {
+        // ── Import flow ──────────────────────────────────────────────────
+        isImportingFile -> {
+            when (val step = importUiState.step) {
+                is ImportFlowStep.FileSelection -> {
+                    BackHandler {
+                        importFlowViewModel.backToFileSelection()
+                        isImportingFile = false
+                    }
+                    FileUploadScreen(
+                        onBack = {
+                            importFlowViewModel.backToFileSelection()
+                            isImportingFile = false
+                        },
+                        onProceed = { extractedText ->
+                            importFlowViewModel.generateCards(extractedText)
+                        },
+                        externalError = importUiState.errorMessage,
+                        onExternalErrorDismissed = { importFlowViewModel.clearError() },
+                    )
+                }
+
+                is ImportFlowStep.Generating -> {
+                    // Block back during generation
+                    BackHandler {}
+                    GeneratingScreen()
+                }
+
+                is ImportFlowStep.NameDeck -> {
+                    BackHandler { importFlowViewModel.backToFileSelection() }
+                    NameDeckScreen(
+                        cardCount = step.cards.size,
+                        isSaving = importUiState.isSaving,
+                        errorMessage = importUiState.errorMessage,
+                        onBack = { importFlowViewModel.backToFileSelection() },
+                        onSave = { deckName ->
+                            importFlowViewModel.saveDeck(deckName, step.cards)
+                        },
+                    )
+                }
+
+                is ImportFlowStep.ReadyToReview -> {
+                    // Block back — deck is already saved, go to review
+                    BackHandler {}
+                    val categoryReviewViewModel = viewModel<CategoryReviewViewModel>(
+                        key = "cat-review-${step.category.id}",
+                        factory = CategoryReviewViewModel.Factory(
+                            effectiveRepository,
+                            step.category.id,
+                        ),
+                    )
+                    ReviewScreen(
+                        viewModel = categoryReviewViewModel,
+                        onBack = {
+                            importFlowViewModel.backToFileSelection()
+                            isImportingFile = false
+                            categoryViewModel.refreshCategories()
+                        },
+                    )
+                }
+            }
+        }
+
+        // ── Review all due cards ─────────────────────────────────────────
+        isReviewing -> {
+            BackHandler { isReviewing = false }
+            ReviewScreen(
+                viewModel = reviewViewModel,
+                onBack = { isReviewing = false },
+            )
+        }
+
+        // ── Stats ────────────────────────────────────────────────────────
+        isShowingStats -> {
+            BackHandler { isShowingStats = false }
+            StatsScreen(
+                viewModel = statsViewModel,
+                onBack = { isShowingStats = false },
+            )
+        }
+
+        // ── Flashcard list for a category ────────────────────────────────
+        selectedCategory != null -> {
+            BackHandler { selectedCategory = null }
+            val flashcardViewModel = viewModel<FlashcardListViewModel>(
+                key = "flashcards-${selectedCategory!!.id}",
+                factory = FlashcardListViewModel.Factory(effectiveRepository, selectedCategory!!.id),
+            )
+            FlashcardListScreen(
+                category = selectedCategory!!,
+                viewModel = flashcardViewModel,
+                onStartReview = { isReviewing = true },
+                onBack = { selectedCategory = null },
+            )
+        }
+
+        // ── Dashboard (default) ──────────────────────────────────────────
+        else -> {
+            CategoryListScreen(
+                viewModel = categoryViewModel,
+                statsViewModel = statsViewModel,
+                session = session,
+                onStartReview = { isReviewing = true },
+                onOpenStats = { isShowingStats = true },
+                onOpenImport = { isImportingFile = true },
+                onOpenProfile = onOpenProfile,
+                onCategorySelected = { selectedCategory = it },
+            )
+        }
     }
 }

@@ -3,8 +3,6 @@ package com.example.flashcardstudy.flashcards
 import com.google.gson.Gson
 import com.google.gson.JsonSyntaxException
 import com.google.gson.reflect.TypeToken
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
@@ -12,8 +10,8 @@ import java.io.IOException
 
 class FlashcardGeneratorService(
     private val apiKey: String,
-    private val model: String = "claude-3-5-sonnet-latest",
-    private val apiService: ClaudeApiService = defaultApiService(),
+    private val model: String = "llama-3.3-70b-versatile",
+    private val apiService: GroqApiService = defaultApiService(),
     private val gson: Gson = Gson(),
 ) {
     suspend fun generateFlashcards(extractedText: String): Result<List<GeneratedFlashcard>> {
@@ -22,17 +20,17 @@ class FlashcardGeneratorService(
         }
 
         return try {
-            val response = apiService.createMessage(
-                apiKey = apiKey,
+            val response = apiService.chatCompletions(
+                bearerToken = "Bearer $apiKey",
                 body = buildRequest(extractedText),
             )
 
             if (!response.isSuccessful) {
                 val errorBody = response.errorBody()?.string().orEmpty()
                 return Result.failure(
-                    ClaudeApiException(
+                    GeminiApiException(
                         buildString {
-                            append("Claude API request failed with HTTP ")
+                            append("Groq API request failed with HTTP ")
                             append(response.code())
                             if (errorBody.isNotBlank()) {
                                 append(": ")
@@ -44,15 +42,17 @@ class FlashcardGeneratorService(
             }
 
             val contentText = response.body()
-                ?.content
+                ?.choices
                 .orEmpty()
-                .mapNotNull { it.text?.trim() }
-                .joinToString(separator = "\n")
-                .trim()
+                .firstOrNull()
+                ?.message
+                ?.content
+                ?.trim()
+                .orEmpty()
 
             if (contentText.isBlank()) {
                 return Result.failure(
-                    MalformedFlashcardJsonException("Claude returned an empty response body.")
+                    MalformedFlashcardJsonException("Groq returned an empty response body.")
                 )
             }
 
@@ -63,32 +63,35 @@ class FlashcardGeneratorService(
             when (exception) {
                 is MalformedFlashcardJsonException,
                 is EmptySourceTextException,
-                is ClaudeApiException -> Result.failure(exception)
+                is GeminiApiException -> Result.failure(exception)
                 is JsonSyntaxException -> Result.failure(
-                    MalformedFlashcardJsonException("Malformed JSON returned by Claude.", exception)
+                    MalformedFlashcardJsonException("Malformed JSON returned by Groq.", exception)
                 )
-                is IOException -> Result.failure(ClaudeApiException("Network or IO error while calling Claude.", exception))
-                else -> Result.failure(ClaudeApiException("Unexpected flashcard generation error.", exception))
+                is IOException -> Result.failure(
+                    GeminiApiException("Network or IO error while calling Groq.", exception)
+                )
+                else -> Result.failure(
+                    GeminiApiException("Unexpected flashcard generation error.", exception)
+                )
             }
         }
     }
 
-    private fun buildRequest(extractedText: String): ClaudeMessageRequest {
+    private fun buildRequest(extractedText: String): GroqChatRequest {
         val systemPrompt = """
-            You are a study assistant. Given the following text from a student's course material, generate clear, concise flashcard question-answer pairs that test understanding of the key concepts, definitions, and facts. Avoid overly simple or overly broad questions. Return ONLY a JSON array in this exact format, no other text: [{"question": "...", "answer": "..."}]. Generate between 5 and 15 cards depending on how much material is present.
-
-            Text: $extractedText
+            You are a study assistant. Given text from a student's course material, generate clear,
+            concise flashcard question-answer pairs that test understanding of key concepts,
+            definitions, and facts. Avoid overly simple or overly broad questions.
+            Return ONLY a JSON array — no markdown fences, no extra text — in this exact format:
+            [{"question": "...", "answer": "..."}]
+            Generate between 5 and 15 cards depending on how much material is present.
         """.trimIndent()
 
-        return ClaudeMessageRequest(
+        return GroqChatRequest(
             model = model,
-            max_tokens = 2000,
-            system = systemPrompt,
             messages = listOf(
-                ClaudeRequestMessage(
-                    role = "user",
-                    content = "Generate the flashcards now.",
-                )
+                GroqMessage(role = "system", content = systemPrompt),
+                GroqMessage(role = "user", content = "Text:\n$extractedText"),
             ),
         )
     }
@@ -97,32 +100,33 @@ class FlashcardGeneratorService(
         val type = object : TypeToken<List<GeneratedFlashcard>>() {}.type
         val cards = gson.fromJson<List<GeneratedFlashcard>>(jsonText, type)
         if (cards.isNullOrEmpty()) {
-            throw MalformedFlashcardJsonException("Claude returned no flashcards.")
+            throw MalformedFlashcardJsonException("Groq returned no flashcards.")
         }
         return cards
     }
 
     private fun extractJsonArray(rawText: String): String {
-        val fencedCodeMatch = Regex("```(?:json)?\\s*([\\s\\S]*?)\\s*```").find(rawText)
-        val candidate = fencedCodeMatch?.groupValues?.getOrNull(1)?.trim().orEmpty().ifBlank { rawText.trim() }
+        // Strip markdown fences if the model adds them anyway
+        val fencedMatch = Regex("```(?:json)?\\s*([\\s\\S]*?)\\s*```").find(rawText)
+        val candidate = fencedMatch?.groupValues?.getOrNull(1)?.trim().orEmpty()
+            .ifBlank { rawText.trim() }
+
         val startIndex = candidate.indexOf('[')
         val endIndex = candidate.lastIndexOf(']')
         if (startIndex == -1 || endIndex == -1 || endIndex <= startIndex) {
-            throw MalformedFlashcardJsonException("Claude response did not contain a JSON array.")
+            throw MalformedFlashcardJsonException("Groq response did not contain a JSON array.")
         }
         return candidate.substring(startIndex, endIndex + 1)
     }
 
     companion object {
-        private fun defaultApiService(): ClaudeApiService {
-            val client = OkHttpClient.Builder().build()
-
+        private fun defaultApiService(): GroqApiService {
             return Retrofit.Builder()
-                .baseUrl("https://api.anthropic.com/")
-                .client(client)
+                .baseUrl("https://api.groq.com/")
+                .client(OkHttpClient.Builder().build())
                 .addConverterFactory(GsonConverterFactory.create())
                 .build()
-                .create(ClaudeApiService::class.java)
+                .create(GroqApiService::class.java)
         }
     }
 }

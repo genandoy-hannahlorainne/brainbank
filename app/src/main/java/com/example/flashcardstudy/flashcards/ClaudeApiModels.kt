@@ -1,25 +1,23 @@
 package com.example.flashcardstudy.flashcards
 
-import com.google.gson.annotations.SerializedName
+// ── Groq / OpenAI-compatible request & response models ──────────────────────
 
-data class ClaudeMessageRequest(
+data class GroqChatRequest(
     val model: String,
-    val max_tokens: Int,
-    val system: String,
-    val messages: List<ClaudeRequestMessage>,
+    val messages: List<GroqMessage>,
+    val max_tokens: Int = 2000,
+    val temperature: Double = 0.7,
 )
 
-data class ClaudeRequestMessage(
-    val role: String,
+data class GroqMessage(
+    val role: String,   // "system" | "user" | "assistant"
     val content: String,
 )
 
-data class ClaudeMessageResponse(
-    val content: List<ClaudeResponseContentBlock>,
+data class GroqChatResponse(
+    val choices: List<GroqChoice>,
 )
 
-data class ClaudeResponseContentBlock(
-    val type: String,
-    val text: String? = null,
-    @SerializedName("partial") val partial: Boolean? = null,
+data class GroqChoice(
+    val message: GroqMessage,
 )

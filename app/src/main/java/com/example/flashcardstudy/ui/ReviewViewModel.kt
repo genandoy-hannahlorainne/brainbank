@@ -66,3 +66,61 @@ class ReviewViewModel(
         }
     }
 }
+
+/**
+ * A variant of ReviewViewModel scoped to a single category.
+ * Used after import so the user reviews only the newly saved deck.
+ */
+class CategoryReviewViewModel(
+    private val repository: StudyRepository,
+    private val categoryId: Long,
+) : ViewModel() {
+
+    private val _uiState = MutableStateFlow(ReviewUiState())
+    val uiState: StateFlow<ReviewUiState> = _uiState.asStateFlow()
+
+    init {
+        loadCards()
+    }
+
+    private fun loadCards() {
+        viewModelScope.launch {
+            val cards = repository.getFlashcards(categoryId)
+            _uiState.value = ReviewUiState(
+                cards = cards,
+                currentIndex = 0,
+                isFlipped = false,
+                isFinished = cards.isEmpty(),
+            )
+        }
+    }
+
+    fun flipCard() {
+        val state = _uiState.value
+        if (state.cards.isEmpty() || state.isFinished) return
+        _uiState.value = state.copy(isFlipped = !state.isFlipped)
+    }
+
+    fun gradeCurrentCard(grade: ReviewGrade) {
+        val state = _uiState.value
+        val currentCard = state.cards.getOrNull(state.currentIndex) ?: return
+        viewModelScope.launch {
+            repository.reviewFlashcard(currentCard, grade)
+            val nextIndex = state.currentIndex + 1
+            _uiState.value = if (nextIndex >= state.cards.size) {
+                state.copy(currentIndex = nextIndex, isFlipped = false, isFinished = true)
+            } else {
+                state.copy(currentIndex = nextIndex, isFlipped = false)
+            }
+        }
+    }
+
+    class Factory(
+        private val repository: StudyRepository,
+        private val categoryId: Long,
+    ) : ViewModelProvider.Factory {
+        @Suppress("UNCHECKED_CAST")
+        override fun <T : ViewModel> create(modelClass: Class<T>): T =
+            CategoryReviewViewModel(repository, categoryId) as T
+    }
+}
