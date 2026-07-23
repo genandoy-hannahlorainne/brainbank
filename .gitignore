@@ -1,0 +1,16 @@
+# Local configuration — never commit secrets or machine-specific paths
+local.properties
+
+# Android build artifacts
+*.iml
+.gradle/
+build/
+app/build/
+
+# IDE files
+.idea/
+*.DS_Store
+
+# Keystore files
+*.jks
+*.keystore
