@@ -66,11 +66,13 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.flashcardstudy.auth.UsernameStore
 import com.example.flashcardstudy.auth.UserSession
 import com.example.flashcardstudy.data.CardSource
 import com.example.flashcardstudy.data.Category
@@ -94,14 +96,22 @@ fun CategoryListScreen(
     onOpenProfile: () -> Unit,
     onCategorySelected: (Category) -> Unit,
 ) {
+    val context = LocalContext.current
     val categories by viewModel.categories.collectAsStateWithLifecycle()
     val statsState by statsViewModel.uiState.collectAsStateWithLifecycle()
     var showAddDialog by rememberSaveable { mutableStateOf(false) }
     var categoryName by rememberSaveable { mutableStateOf("") }
 
     val displayName = (session as? UserSession.SignedIn)?.displayName
-    val firstName = displayName?.split(" ")?.firstOrNull() ?: "there"
-    val initial = firstName.first().uppercaseChar()
+    val signedIn = session as? UserSession.SignedIn
+
+    // Load custom username if available, else use Google display name
+    val username = if (signedIn != null) {
+        UsernameStore.get(context, signedIn.uid) ?: displayName
+    } else null
+
+    val firstName = username?.split(" ")?.firstOrNull() ?: displayName?.split(" ")?.firstOrNull() ?: "there"
+    val initial = (username?.firstOrNull() ?: displayName?.firstOrNull() ?: 'T').uppercaseChar()
 
     val dueToday = statsState.dueBuckets.firstOrNull()?.totalDue ?: 0
     val streak = statsState.currentStreak
@@ -309,6 +319,7 @@ private fun DashboardHeader(
     isGuest: Boolean,
     onAvatarClick: () -> Unit,
 ) {
+    val context = LocalContext.current
     Box(
         modifier = Modifier
             .fillMaxWidth()

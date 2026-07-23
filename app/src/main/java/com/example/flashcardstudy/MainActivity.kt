@@ -193,6 +193,7 @@ private fun BrainBankApp(
                     userSession = null
                     destination = AppDestination.LOGIN
                 },
+                onUsernameChanged = { /* trigger recompose */ },
             )
         }
     }
