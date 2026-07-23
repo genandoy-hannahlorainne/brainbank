@@ -76,6 +76,10 @@ open class StudyRepository(
         return flashcardDao.getDueFlashcards(System.currentTimeMillis())
     }
 
+    open suspend fun getDueCountForCategory(categoryId: Long): Int {
+        return flashcardDao.getDueCountForCategory(categoryId, System.currentTimeMillis())
+    }
+
     open suspend fun updateFlashcard(flashcard: Flashcard) {
         flashcardDao.update(flashcard)
     }
@@ -157,6 +161,9 @@ private class GuestStudyRepository(
 
     override suspend fun getDueFlashcards(): List<Flashcard> =
         guestFlashcards.value.filter { it.nextReviewDate <= System.currentTimeMillis() }
+
+    override suspend fun getDueCountForCategory(categoryId: Long): Int =
+        guestFlashcards.value.count { it.categoryId == categoryId && it.nextReviewDate <= System.currentTimeMillis() }
 
     override suspend fun updateFlashcard(flashcard: Flashcard) {
         guestFlashcards.value = guestFlashcards.value.map { if (it.id == flashcard.id) flashcard else it }

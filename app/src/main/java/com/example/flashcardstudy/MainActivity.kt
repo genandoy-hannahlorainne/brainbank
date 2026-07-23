@@ -47,8 +47,9 @@ import com.example.flashcardstudy.ui.ImportFlowStep
 import com.example.flashcardstudy.ui.ImportFlowViewModel
 import com.example.flashcardstudy.ui.NameDeckScreen
 import com.example.flashcardstudy.ui.ProfileScreen
+import com.example.flashcardstudy.ui.ReviewPickerScreen
+import com.example.flashcardstudy.ui.ReviewPickerViewModel
 import com.example.flashcardstudy.ui.ReviewScreen
-import com.example.flashcardstudy.ui.ReviewViewModel
 import com.example.flashcardstudy.ui.StatsScreen
 import com.example.flashcardstudy.ui.StatsViewModel
 import com.example.flashcardstudy.ui.TopicGenerateState
@@ -208,13 +209,15 @@ private fun MainContent(
     onOpenProfile: () -> Unit,
 ) {
     var selectedCategory by remember { mutableStateOf<Category?>(null) }
-    var isReviewing by remember { mutableStateOf(false) }
     var isShowingStats by remember { mutableStateOf(false) }
     var isImportingFile by remember { mutableStateOf(false) }
     var isImportingIntoDeck by remember { mutableStateOf(false) }
     var showTopicDialog by remember { mutableStateOf(false) }
     var topicInput by remember { mutableStateOf("") }
     var isAiGeneratingForDeck by remember { mutableStateOf(false) }
+    // Review flow: picker first, then per-deck review
+    var isPickingReviewDeck by remember { mutableStateOf(false) }
+    var reviewingCategoryId by remember { mutableStateOf<Long?>(null) }
 
     val effectiveRepository = remember(session) {
         if (session is UserSession.Guest) repository.asReadOnlyGuestRepository()
@@ -224,8 +227,8 @@ private fun MainContent(
     val categoryViewModel = viewModel<CategoryListViewModel>(
         factory = CategoryListViewModel.Factory(effectiveRepository),
     )
-    val reviewViewModel = viewModel<ReviewViewModel>(
-        factory = ReviewViewModel.Factory(effectiveRepository),
+    val reviewPickerViewModel = viewModel<ReviewPickerViewModel>(
+        factory = ReviewPickerViewModel.Factory(effectiveRepository),
     )
     val statsViewModel = viewModel<StatsViewModel>(
         factory = StatsViewModel.Factory(effectiveRepository),
@@ -366,14 +369,39 @@ private fun MainContent(
             }
         }
 
-        // ── Review all due cards ─────────────────────────────────────────
-        isReviewing -> {
-            BackHandler { isReviewing = false }
-            ReviewScreen(
-                viewModel = reviewViewModel,
-                onBack = { isReviewing = false },
+        // ── Review deck picker ───────────────────────────────────────────
+        isPickingReviewDeck -> {
+            BackHandler { isPickingReviewDeck = false }
+            ReviewPickerScreen(
+                viewModel = reviewPickerViewModel,
+                onBack = { isPickingReviewDeck = false },
+                onDeckSelected = { categoryId ->
+                    reviewingCategoryId = categoryId
+                    isPickingReviewDeck = false
+                },
             )
         }
+
+        // ── Per-deck review ──────────────────────────────────────────────
+        reviewingCategoryId != null -> {
+            val catId = reviewingCategoryId!!
+            BackHandler {
+                reviewingCategoryId = null
+                isPickingReviewDeck = true
+            }
+            val deckReviewVm = viewModel<CategoryReviewViewModel>(
+                key = "quick-review-$catId",
+                factory = CategoryReviewViewModel.Factory(effectiveRepository, catId),
+            )
+            ReviewScreen(
+                viewModel = deckReviewVm,
+                onBack = {
+                    reviewingCategoryId = null
+                    isPickingReviewDeck = true
+                },
+            )
+        }
+
 
         // ── Stats ────────────────────────────────────────────────────────
         isShowingStats -> {
@@ -452,7 +480,9 @@ private fun MainContent(
                 FlashcardListScreen(
                     category = category,
                     viewModel = vm,
-                    onStartReview = { isReviewing = true },
+                    onStartReview = {
+                        reviewingCategoryId = category.id
+                    },
                     onBack = { selectedCategory = null },
                     onAiGenerate = { showTopicDialog = true },
                     onImportFile = { isImportingIntoDeck = true },
@@ -466,7 +496,10 @@ private fun MainContent(
                 viewModel = categoryViewModel,
                 statsViewModel = statsViewModel,
                 session = session,
-                onStartReview = { isReviewing = true },
+                onStartReview = { 
+                    reviewPickerViewModel.load()
+                    isPickingReviewDeck = true
+                },
                 onOpenStats = { isShowingStats = true },
                 onOpenImport = { isImportingFile = true },
                 onOpenProfile = onOpenProfile,

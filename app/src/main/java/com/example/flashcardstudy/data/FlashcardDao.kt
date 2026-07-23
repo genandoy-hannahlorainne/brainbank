@@ -28,6 +28,9 @@ interface FlashcardDao {
     @Query("SELECT * FROM flashcards WHERE nextReviewDate <= :currentTimeMillis ORDER BY nextReviewDate ASC")
     suspend fun getDueFlashcards(currentTimeMillis: Long): List<Flashcard>
 
+    @Query("SELECT COUNT(*) FROM flashcards WHERE categoryId = :categoryId AND nextReviewDate <= :currentTimeMillis")
+    suspend fun getDueCountForCategory(categoryId: Long, currentTimeMillis: Long): Int
+
     @Update
     suspend fun update(flashcard: Flashcard)
 
