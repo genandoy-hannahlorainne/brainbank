@@ -4,6 +4,7 @@ import android.Manifest
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
@@ -119,11 +120,17 @@ private fun BrainBankApp(
             onNext = { destination = AppDestination.WELCOME }
         )
 
-        AppDestination.WELCOME -> WelcomeScreen(
-            onGetStarted = { destination = AppDestination.LOGIN }
-        )
+        AppDestination.WELCOME -> {
+            // Back on welcome does nothing — don't go back to splash
+            BackHandler {}
+            WelcomeScreen(
+                onGetStarted = { destination = AppDestination.LOGIN }
+            )
+        }
 
         AppDestination.LOGIN -> {
+            // Back on login does nothing — user must choose sign-in or guest
+            BackHandler {}
             val loginViewModel = viewModel<LoginViewModel>(
                 factory = LoginViewModel.Factory(authManager)
             )
@@ -150,6 +157,8 @@ private fun BrainBankApp(
         }
 
         AppDestination.PROFILE -> {
+            // Back on profile goes to main dashboard
+            BackHandler { destination = AppDestination.MAIN }
             val session = userSession ?: UserSession.Guest
             ProfileScreen(
                 session = session,
@@ -195,21 +204,25 @@ private fun MainContent(
     )
 
     if (isImportingFile) {
+        BackHandler { isImportingFile = false }
         FileUploadScreen(
             onBack = { isImportingFile = false },
             onProceed = { isImportingFile = false },
         )
     } else if (isReviewing) {
+        BackHandler { isReviewing = false }
         ReviewScreen(
             viewModel = reviewViewModel,
             onBack = { isReviewing = false },
         )
     } else if (isShowingStats) {
+        BackHandler { isShowingStats = false }
         StatsScreen(
             viewModel = statsViewModel,
             onBack = { isShowingStats = false },
         )
     } else if (selectedCategory == null) {
+        // Dashboard — back exits the app (no handler, let system handle it)
         CategoryListScreen(
             viewModel = categoryViewModel,
             statsViewModel = statsViewModel,
@@ -221,6 +234,7 @@ private fun MainContent(
             onCategorySelected = { selectedCategory = it },
         )
     } else {
+        BackHandler { selectedCategory = null }
         val flashcardViewModel = viewModel<FlashcardListViewModel>(
             key = "flashcards-${selectedCategory!!.id}",
             factory = FlashcardListViewModel.Factory(effectiveRepository, selectedCategory!!.id),
