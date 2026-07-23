@@ -3,6 +3,7 @@ package com.example.flashcardstudy.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.example.flashcardstudy.data.CardSource
 import com.example.flashcardstudy.data.Category
 import com.example.flashcardstudy.data.StudyRepository
 import com.example.flashcardstudy.flashcards.FlashcardGeneratorService
@@ -20,7 +21,7 @@ sealed class ImportFlowStep {
     object Generating : ImportFlowStep()
 
     /** Cards generated — user types a deck name */
-    data class NameDeck(val cards: List<GeneratedFlashcard>) : ImportFlowStep()
+    data class NameDeck(val cards: List<GeneratedFlashcard>, val source: CardSource) : ImportFlowStep()
 
     /** Cards saved — ready to review the new deck */
     data class ReadyToReview(val category: Category) : ImportFlowStep()
@@ -42,8 +43,11 @@ class ImportFlowViewModel(
     private val _uiState = MutableStateFlow(ImportFlowUiState())
     val uiState: StateFlow<ImportFlowUiState> = _uiState.asStateFlow()
 
-    /** Called when user taps Proceed on the FileUploadScreen */
-    fun generateCards(extractedText: String) {
+    /**
+     * Called when user taps Proceed on the FileUploadScreen.
+     * [source] tells us whether the file was a PDF, image, or document.
+     */
+    fun generateCards(extractedText: String, source: CardSource = CardSource.AI_FILE) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(
                 step = ImportFlowStep.Generating,
@@ -53,7 +57,7 @@ class ImportFlowViewModel(
             result.fold(
                 onSuccess = { cards ->
                     _uiState.value = _uiState.value.copy(
-                        step = ImportFlowStep.NameDeck(cards),
+                        step = ImportFlowStep.NameDeck(cards, source),
                     )
                 },
                 onFailure = { error ->
@@ -68,9 +72,9 @@ class ImportFlowViewModel(
 
     /**
      * Called when user confirms the deck name.
-     * Creates the category, saves all cards, then moves to ReadyToReview.
+     * Creates the category, saves all cards tagged with [source], then moves to ReadyToReview.
      */
-    fun saveDeck(deckName: String, cards: List<GeneratedFlashcard>) {
+    fun saveDeck(deckName: String, cards: List<GeneratedFlashcard>, source: CardSource) {
         val trimmedName = deckName.trim()
         if (trimmedName.isBlank()) {
             _uiState.value = _uiState.value.copy(errorMessage = "Please enter a deck name.")
@@ -80,7 +84,6 @@ class ImportFlowViewModel(
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isSaving = true, errorMessage = null)
             try {
-                // Pick a color from the palette (cycle through)
                 val colorPalette = listOf(
                     "#FF7043", "#42A5F5", "#66BB6A",
                     "#AB47BC", "#FFA726", "#26A69A",
@@ -89,7 +92,7 @@ class ImportFlowViewModel(
                 val colorHex = colorPalette[allCategories.size % colorPalette.size]
 
                 val categoryId = repository.addCategory(trimmedName, colorHex)
-                repository.addFlashcards(categoryId, cards)
+                repository.addFlashcards(categoryId, cards, source)
 
                 val savedCategory = Category(id = categoryId, name = trimmedName, colorHex = colorHex)
                 _uiState.value = _uiState.value.copy(
@@ -108,13 +111,6 @@ class ImportFlowViewModel(
     fun backToFileSelection() {
         _uiState.value = _uiState.value.copy(
             step = ImportFlowStep.FileSelection,
-            errorMessage = null,
-        )
-    }
-
-    fun backToNameDeck(cards: List<GeneratedFlashcard>) {
-        _uiState.value = _uiState.value.copy(
-            step = ImportFlowStep.NameDeck(cards),
             errorMessage = null,
         )
     }

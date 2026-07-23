@@ -236,6 +236,17 @@ private fun MainContent(
     )
     val topicGenerateState by topicGenerateViewModel.state.collectAsStateWithLifecycle()
 
+    // Keep a stable reference to the flashcard list VM for the selected category.
+    // Both the FlashcardListScreen and the AI review screen need it so that
+    // after saving generated cards we can call refreshFlashcards() directly
+    // without destroying / recreating the ViewModel.
+    val flashcardListViewModel: FlashcardListViewModel? = if (selectedCategory != null) {
+        viewModel<FlashcardListViewModel>(
+            key = "flashcards-${selectedCategory!!.id}",
+            factory = FlashcardListViewModel.Factory(effectiveRepository, selectedCategory!!.id),
+        )
+    } else null
+
     // When AI finishes generating, navigate to review screen
     LaunchedEffect(topicGenerateState) {
         if (topicGenerateState is TopicGenerateState.Success) {
@@ -269,10 +280,8 @@ private fun MainContent(
                 onBack = { topicGenerateViewModel.reset() },
                 onSaved = {
                     topicGenerateViewModel.reset()
-                    // Refresh the flashcard list by re-selecting the same category
-                    val cat = selectedCategory
-                    selectedCategory = null
-                    selectedCategory = cat
+                    // Directly refresh the existing FlashcardListViewModel so cards appear
+                    flashcardListViewModel?.refreshFlashcards()
                 },
             )
         }
@@ -290,8 +299,8 @@ private fun MainContent(
                             importFlowViewModel.backToFileSelection()
                             isImportingFile = false
                         },
-                        onProceed = { extractedText ->
-                            importFlowViewModel.generateCards(extractedText)
+                        onProceed = { extractedText, cardSource ->
+                            importFlowViewModel.generateCards(extractedText, cardSource)
                         },
                         externalError = importUiState.errorMessage,
                         onExternalErrorDismissed = { importFlowViewModel.clearError() },
@@ -311,7 +320,7 @@ private fun MainContent(
                         errorMessage = importUiState.errorMessage,
                         onBack = { importFlowViewModel.backToFileSelection() },
                         onSave = { deckName ->
-                            importFlowViewModel.saveDeck(deckName, step.cards)
+                            importFlowViewModel.saveDeck(deckName, step.cards, step.source)
                         },
                     )
                 }
@@ -358,13 +367,9 @@ private fun MainContent(
         // ── Flashcard list for a category ────────────────────────────────
         selectedCategory != null -> {
             BackHandler { selectedCategory = null }
-            val flashcardViewModel = viewModel<FlashcardListViewModel>(
-                key = "flashcards-${selectedCategory!!.id}",
-                factory = FlashcardListViewModel.Factory(effectiveRepository, selectedCategory!!.id),
-            )
             FlashcardListScreen(
                 category = selectedCategory!!,
-                viewModel = flashcardViewModel,
+                viewModel = flashcardListViewModel!!,
                 onStartReview = { isReviewing = true },
                 onBack = { selectedCategory = null },
                 onAiGenerate = { showTopicDialog = true },

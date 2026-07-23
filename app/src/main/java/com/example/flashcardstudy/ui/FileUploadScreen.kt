@@ -38,15 +38,26 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.example.flashcardstudy.data.CardSource
 import com.example.flashcardstudy.fileimport.FileTextExtractor
 import kotlinx.coroutines.launch
+
+/** Resolves MIME type to the appropriate [CardSource] for tagging saved cards. */
+private fun mimeTypeToCardSource(mimeType: String): CardSource = when {
+    mimeType == "application/pdf" -> CardSource.AI_PDF
+    mimeType.startsWith("image/") -> CardSource.AI_IMAGE
+    mimeType.contains("word") ||
+        mimeType == "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+        mimeType == "text/plain" -> CardSource.AI_DOC
+    else -> CardSource.AI_FILE   // fallback for unknown types
+}
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
 fun FileUploadScreen(
     onBack: () -> Unit,
-    onProceed: (String) -> Unit,
-    // Error coming from the parent (e.g. Gemini API failure) — different from local extract error
+    /** Called with (extractedText, cardSource) when user confirms generation. */
+    onProceed: (String, CardSource) -> Unit,
     externalError: String? = null,
     onExternalErrorDismissed: () -> Unit = {},
 ) {
@@ -54,6 +65,9 @@ fun FileUploadScreen(
     val scope = rememberCoroutineScope()
     var extractedText by rememberSaveable { mutableStateOf("") }
     var fileName by rememberSaveable { mutableStateOf("") }
+    // Store the enum name as a String so rememberSaveable can survive process death
+    var detectedSourceName by rememberSaveable { mutableStateOf("AI_FILE") }
+    val detectedSource: CardSource = CardSource.valueOf(detectedSourceName)
     var isLoading by rememberSaveable { mutableStateOf(false) }
     var localError by rememberSaveable { mutableStateOf<String?>(null) }
     var showProceedDialog by rememberSaveable { mutableStateOf(false) }
@@ -68,6 +82,8 @@ fun FileUploadScreen(
             extractedText = ""
             fileName = uri.lastPathSegment?.substringAfterLast('/') ?: "Selected file"
             try {
+                val mimeType = context.contentResolver.getType(uri).orEmpty()
+                detectedSourceName = mimeTypeToCardSource(mimeType).name
                 extractedText = FileTextExtractor.extractRawText(context, uri)
             } catch (exception: Exception) {
                 localError = exception.message ?: "Failed to extract text from the selected file."
@@ -100,7 +116,7 @@ fun FileUploadScreen(
         ) {
             Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text(text = "Pick a PDF or image to extract raw text.")
+                    Text(text = "Pick a PDF, image, or document to extract text.")
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text = "PDFs use PdfBox-Android. Images use ML Kit text recognition.",
@@ -113,7 +129,7 @@ fun FileUploadScreen(
                 onClick = { pickerLauncher.launch("*/*") },
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text(text = "Choose PDF or Image")
+                Text(text = "Choose PDF, Image, or Document")
             }
 
             if (isLoading) {
@@ -131,7 +147,6 @@ fun FileUploadScreen(
                 Text(text = fileName, style = MaterialTheme.typography.labelLarge)
             }
 
-            // Local extraction error
             if (localError != null) {
                 Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
                     Text(
@@ -142,7 +157,6 @@ fun FileUploadScreen(
                 }
             }
 
-            // External error from Gemini API (passed from parent)
             if (externalError != null) {
                 Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
                     Text(
@@ -188,7 +202,7 @@ fun FileUploadScreen(
                 TextButton(
                     onClick = {
                         showProceedDialog = false
-                        onProceed(extractedText)   // ← triggers ImportFlowViewModel.generateCards()
+                        onProceed(extractedText, detectedSource)
                     }
                 ) {
                     Text(text = "Generate")

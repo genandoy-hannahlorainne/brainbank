@@ -72,13 +72,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.flashcardstudy.auth.UserSession
+import com.example.flashcardstudy.data.CardSource
 import com.example.flashcardstudy.data.Category
 import com.example.flashcardstudy.data.Flashcard
 import com.example.flashcardstudy.data.ReviewGrade
 import com.example.flashcardstudy.ui.theme.BrandBackground
 import com.example.flashcardstudy.ui.theme.BrandPrimary
 import com.example.flashcardstudy.ui.theme.BrandSecondary
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Home / Dashboard screen
 // ─────────────────────────────────────────────────────────────────────────────
@@ -578,6 +578,8 @@ fun FlashcardListScreen(
     onAiGenerate: () -> Unit = {},
 ) {
     val flashcards by viewModel.flashcards.collectAsStateWithLifecycle()
+    val groups by viewModel.groups.collectAsStateWithLifecycle()
+
     var showEditor by rememberSaveable { mutableStateOf(false) }
     var editingFlashcardId by rememberSaveable { mutableStateOf<Long?>(null) }
     var question by rememberSaveable { mutableStateOf("") }
@@ -591,6 +593,8 @@ fun FlashcardListScreen(
             answer = editingFlashcard.answer
         }
     }
+
+    val accentColor = parseHexColor(category.colorHex)
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -629,7 +633,7 @@ fun FlashcardListScreen(
                     .padding(paddingValues)
                     .padding(24.dp),
                 categoryName = category.name,
-                accentColor = parseHexColor(category.colorHex),
+                accentColor = accentColor,
                 onAddClick = {
                     editingFlashcardId = null
                     question = ""
@@ -639,25 +643,45 @@ fun FlashcardListScreen(
                 onAiGenerate = onAiGenerate,
             )
         } else {
+            // ── Grouped folder view ───────────────────────────────────────
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(paddingValues)
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                    .padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(vertical = 16.dp),
             ) {
-                items(flashcards, key = { it.id }) { flashcard ->
-                    FlashcardRow(
-                        flashcard = flashcard,
-                        accentColor = parseHexColor(category.colorHex),
-                        onEdit = {
-                            editingFlashcardId = flashcard.id
-                            question = flashcard.question
-                            answer = flashcard.answer
-                            showEditor = true
-                        },
-                        onDelete = { viewModel.deleteFlashcard(flashcard) },
-                    )
+                groups.forEach { group ->
+                    // ── Folder header row ─────────────────────────────────
+                    item(key = "header-${group.source}") {
+                        FlashcardGroupHeader(
+                            group = group,
+                            accentColor = accentColor,
+                            onToggle = { viewModel.toggleGroup(group.source) },
+                        )
+                    }
+
+                    // ── Cards inside the folder (only when expanded) ──────
+                    if (group.isExpanded) {
+                        items(group.cards, key = { "card-${it.id}" }) { flashcard ->
+                            FlashcardRow(
+                                flashcard = flashcard,
+                                accentColor = accentColor,
+                                onEdit = {
+                                    editingFlashcardId = flashcard.id
+                                    question = flashcard.question
+                                    answer = flashcard.answer
+                                    showEditor = true
+                                },
+                                onDelete = { viewModel.deleteFlashcard(flashcard) },
+                            )
+                        }
+                        // Small spacer after last card in group
+                        item(key = "spacer-${group.source}") {
+                            Spacer(modifier = Modifier.height(4.dp))
+                        }
+                    }
                 }
             }
         }
@@ -714,6 +738,68 @@ fun FlashcardListScreen(
                 }
             },
         )
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Folder header — tappable row that expands / collapses a group
+// ─────────────────────────────────────────────────────────────────────────────
+
+@Composable
+private fun FlashcardGroupHeader(
+    group: FlashcardGroup,
+    accentColor: Color,
+    onToggle: () -> Unit,
+) {
+    val rotationAngle by animateFloatAsState(
+        targetValue = if (group.isExpanded) 90f else 0f,
+        animationSpec = spring(dampingRatio = 0.8f, stiffness = 300f),
+        label = "chevron",
+    )
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onToggle),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = accentColor.copy(alpha = if (group.isExpanded) 0.14f else 0.07f),
+        ),
+        elevation = CardDefaults.cardElevation(0.dp),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            // Emoji icon
+            Text(text = group.emoji, style = MaterialTheme.typography.titleLarge)
+
+            // Label + count
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = group.label,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    text = "${group.cards.size} ${if (group.cards.size == 1) "card" else "cards"}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+                )
+            }
+
+            // Animated chevron
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
+                contentDescription = if (group.isExpanded) "Collapse" else "Expand",
+                modifier = Modifier
+                    .size(14.dp)
+                    .graphicsLayer { rotationZ = rotationAngle },
+                tint = accentColor,
+            )
+        }
     }
 }
 
@@ -963,7 +1049,19 @@ private fun FlashcardRow(
                     .background(accentColor),
             )
             Spacer(modifier = Modifier.height(12.dp))
-            Text(text = flashcard.question, style = MaterialTheme.typography.titleMedium)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = flashcard.question,
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.weight(1f),
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                CardSourceBadge(source = flashcard.source)
+            }
             Spacer(modifier = Modifier.height(4.dp))
             Text(text = flashcard.answer, style = MaterialTheme.typography.bodyMedium)
             Spacer(modifier = Modifier.height(12.dp))
@@ -978,5 +1076,56 @@ private fun FlashcardRow(
                 }
             }
         }
+    }
+}
+
+/**
+ * Small pill badge that shows the origin of a flashcard.
+ * - MANUAL: no badge (keeps the UI clean for hand-typed cards)
+ * - AI_FILE: "✦ AI · File" in a teal tint
+ * - AI_TOPIC: "✦ AI · Topic" in a purple tint
+ */
+@Composable
+private fun CardSourceBadge(source: CardSource) {
+    val (label, containerColor, contentColor) = when (source) {
+        CardSource.MANUAL -> return   // No badge for manually-added cards
+        CardSource.AI_PDF -> Triple(
+            "✦ PDF",
+            Color(0xFFD32F2F).copy(alpha = 0.12f),
+            Color(0xFFC62828),
+        )
+        CardSource.AI_IMAGE -> Triple(
+            "✦ Image",
+            Color(0xFF7B1FA2).copy(alpha = 0.12f),
+            Color(0xFF6A1B9A),
+        )
+        CardSource.AI_DOC -> Triple(
+            "✦ Doc",
+            Color(0xFF1976D2).copy(alpha = 0.12f),
+            Color(0xFF1565C0),
+        )
+        CardSource.AI_FILE -> Triple(
+            "✦ AI · File",
+            Color(0xFF00695C).copy(alpha = 0.12f),
+            Color(0xFF00695C),
+        )
+        CardSource.AI_TOPIC -> Triple(
+            "✦ AI · Topic",
+            Color(0xFF6A1B9A).copy(alpha = 0.12f),
+            Color(0xFF7B1FA2),
+        )
+    }
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(containerColor)
+            .padding(horizontal = 8.dp, vertical = 3.dp),
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = contentColor,
+            fontWeight = FontWeight.SemiBold,
+        )
     }
 }
