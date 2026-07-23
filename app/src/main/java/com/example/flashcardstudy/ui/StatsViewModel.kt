@@ -36,6 +36,9 @@ data class StatsUiState(
     val currentStreak: Int = 0,
     val dueBuckets: List<DueDayBucket> = emptyList(),
     val categories: List<Category> = emptyList(),
+    val totalCards: Int = 0,
+    val masteredCards: Int = 0,
+    val masteryPercentage: Int = 0,
     val isLoading: Boolean = true,
 )
 
@@ -69,11 +72,19 @@ class StatsViewModel(
         val streak = calculateCurrentStreak(reviewLogs)
         val dueBuckets = buildDueBuckets(categories, flashcards, today)
 
+        // Calculate mastery stats (cards with repetitions >= 3 are considered mastered)
+        val totalCards = flashcards.size
+        val masteredCards = flashcards.count { it.repetitions >= 3 }
+        val masteryPercentage = if (totalCards > 0) (masteredCards * 100) / totalCards else 0
+
         return StatsUiState(
             cardsReviewedToday = reviewedToday,
             currentStreak = streak,
             dueBuckets = dueBuckets,
             categories = categories,
+            totalCards = totalCards,
+            masteredCards = masteredCards,
+            masteryPercentage = masteryPercentage,
             isLoading = false,
         )
     }
