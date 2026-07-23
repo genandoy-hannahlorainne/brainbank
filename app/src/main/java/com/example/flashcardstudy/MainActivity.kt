@@ -7,7 +7,10 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.ui.unit.dp
 import androidx.compose.material3.Surface
 import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.Composable
@@ -45,9 +48,21 @@ import com.example.flashcardstudy.ui.ReviewScreen
 import com.example.flashcardstudy.ui.ReviewViewModel
 import com.example.flashcardstudy.ui.StatsScreen
 import com.example.flashcardstudy.ui.StatsViewModel
+import com.example.flashcardstudy.ui.TopicGenerateState
+import com.example.flashcardstudy.ui.TopicGenerateViewModel
+import com.example.flashcardstudy.ui.generated.GeneratedCardsReviewScreen
+import com.example.flashcardstudy.ui.generated.GeneratedCardsReviewViewModel
 import com.example.flashcardstudy.ui.onboarding.SplashScreen
 import com.example.flashcardstudy.ui.onboarding.WelcomeScreen
 import com.example.flashcardstudy.ui.theme.FlashcardStudyTheme
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.LaunchedEffect
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -193,6 +208,9 @@ private fun MainContent(
     var isReviewing by remember { mutableStateOf(false) }
     var isShowingStats by remember { mutableStateOf(false) }
     var isImportingFile by remember { mutableStateOf(false) }
+    var showTopicDialog by remember { mutableStateOf(false) }
+    var topicInput by remember { mutableStateOf("") }
+    var isAiGeneratingForDeck by remember { mutableStateOf(false) }
 
     val effectiveRepository = remember(session) {
         if (session is UserSession.Guest) repository.asReadOnlyGuestRepository()
@@ -213,7 +231,52 @@ private fun MainContent(
     )
     val importUiState by importFlowViewModel.uiState.collectAsStateWithLifecycle()
 
+    val topicGenerateViewModel = viewModel<TopicGenerateViewModel>(
+        factory = TopicGenerateViewModel.Factory(BuildConfig.GROQ_API_KEY),
+    )
+    val topicGenerateState by topicGenerateViewModel.state.collectAsStateWithLifecycle()
+
+    // When AI finishes generating, navigate to review screen
+    LaunchedEffect(topicGenerateState) {
+        if (topicGenerateState is TopicGenerateState.Success) {
+            isAiGeneratingForDeck = false
+        }
+    }
+
     when {
+        // ── AI topic generation — review generated cards ─────────────────
+        isAiGeneratingForDeck -> {
+            BackHandler {}
+            GeneratingScreen()
+        }
+
+        topicGenerateState is TopicGenerateState.Success && selectedCategory != null -> {
+            val cards = (topicGenerateState as TopicGenerateState.Success).cards
+            val category = selectedCategory!!
+            BackHandler {
+                topicGenerateViewModel.reset()
+            }
+            val generatedReviewViewModel = viewModel<GeneratedCardsReviewViewModel>(
+                key = "ai-review-${category.id}",
+                factory = GeneratedCardsReviewViewModel.Factory(
+                    effectiveRepository,
+                    category,
+                    cards,
+                ),
+            )
+            GeneratedCardsReviewScreen(
+                viewModel = generatedReviewViewModel,
+                onBack = { topicGenerateViewModel.reset() },
+                onSaved = {
+                    topicGenerateViewModel.reset()
+                    // Refresh the flashcard list by re-selecting the same category
+                    val cat = selectedCategory
+                    selectedCategory = null
+                    selectedCategory = cat
+                },
+            )
+        }
+
         // ── Import flow ──────────────────────────────────────────────────
         isImportingFile -> {
             when (val step = importUiState.step) {
@@ -236,7 +299,6 @@ private fun MainContent(
                 }
 
                 is ImportFlowStep.Generating -> {
-                    // Block back during generation
                     BackHandler {}
                     GeneratingScreen()
                 }
@@ -255,7 +317,6 @@ private fun MainContent(
                 }
 
                 is ImportFlowStep.ReadyToReview -> {
-                    // Block back — deck is already saved, go to review
                     BackHandler {}
                     val categoryReviewViewModel = viewModel<CategoryReviewViewModel>(
                         key = "cat-review-${step.category.id}",
@@ -306,6 +367,7 @@ private fun MainContent(
                 viewModel = flashcardViewModel,
                 onStartReview = { isReviewing = true },
                 onBack = { selectedCategory = null },
+                onAiGenerate = { showTopicDialog = true },
             )
         }
 
@@ -322,5 +384,59 @@ private fun MainContent(
                 onCategorySelected = { selectedCategory = it },
             )
         }
+    }
+
+    // ── Topic input dialog ───────────────────────────────────────────────
+    if (showTopicDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                showTopicDialog = false
+                topicInput = ""
+            },
+            title = { Text(text = "✨ Generate with AI") },
+            text = {
+                Column {
+                    Text(
+                        text = "What topic should the AI generate flashcards about?",
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = topicInput,
+                        onValueChange = { topicInput = it },
+                        label = { Text(text = "Topic (e.g. Photosynthesis, World War II)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    if (topicGenerateState is TopicGenerateState.Error) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = (topicGenerateState as TopicGenerateState.Error).message,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        if (topicInput.isNotBlank()) {
+                            showTopicDialog = false
+                            isAiGeneratingForDeck = true
+                            topicGenerateViewModel.generate(topicInput)
+                            topicInput = ""
+                        }
+                    },
+                    enabled = topicInput.isNotBlank(),
+                ) { Text(text = "Generate") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showTopicDialog = false
+                    topicInput = ""
+                    topicGenerateViewModel.reset()
+                }) { Text(text = "Cancel") }
+            },
+        )
     }
 }

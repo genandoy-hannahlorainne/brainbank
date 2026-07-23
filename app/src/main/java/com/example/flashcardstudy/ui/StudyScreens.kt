@@ -575,6 +575,7 @@ fun FlashcardListScreen(
     viewModel: FlashcardListViewModel,
     onStartReview: () -> Unit,
     onBack: () -> Unit,
+    onAiGenerate: () -> Unit = {},
 ) {
     val flashcards by viewModel.flashcards.collectAsStateWithLifecycle()
     var showEditor by rememberSaveable { mutableStateOf(false) }
@@ -635,6 +636,7 @@ fun FlashcardListScreen(
                     answer = ""
                     showEditor = true
                 },
+                onAiGenerate = onAiGenerate,
             )
         } else {
             LazyColumn(
@@ -892,6 +894,7 @@ private fun EmptyFlashcardState(
     categoryName: String,
     accentColor: Color,
     onAddClick: () -> Unit,
+    onAiGenerate: () -> Unit = {},
 ) {
     Column(
         modifier = modifier,
@@ -919,6 +922,14 @@ private fun EmptyFlashcardState(
             text = "Add your first card to start studying $categoryName.",
             style = MaterialTheme.typography.bodyMedium,
         )
+        Spacer(modifier = Modifier.height(20.dp))
+        Button(
+            onClick = onAiGenerate,
+            colors = ButtonDefaults.buttonColors(containerColor = BrandPrimary),
+            shape = RoundedCornerShape(16.dp),
+        ) {
+            Text(text = "✨ Generate with AI")
+        }
     }
 }
 
