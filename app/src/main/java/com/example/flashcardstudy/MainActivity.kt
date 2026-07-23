@@ -32,6 +32,7 @@ import com.example.flashcardstudy.ui.CategoryListViewModel
 import com.example.flashcardstudy.ui.FileUploadScreen
 import com.example.flashcardstudy.ui.FlashcardListScreen
 import com.example.flashcardstudy.ui.FlashcardListViewModel
+import com.example.flashcardstudy.ui.ProfileScreen
 import com.example.flashcardstudy.ui.ReviewScreen
 import com.example.flashcardstudy.ui.ReviewViewModel
 import com.example.flashcardstudy.ui.StatsScreen
@@ -101,7 +102,7 @@ class MainActivity : ComponentActivity() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 private enum class AppDestination {
-    SPLASH, WELCOME, LOGIN, MAIN
+    SPLASH, WELCOME, LOGIN, MAIN, PROFILE
 }
 
 @Composable
@@ -144,6 +145,19 @@ private fun BrainBankApp(
             MainContent(
                 repository = repository,
                 session = session,
+                onOpenProfile = { destination = AppDestination.PROFILE },
+            )
+        }
+
+        AppDestination.PROFILE -> {
+            val session = userSession ?: UserSession.Guest
+            ProfileScreen(
+                session = session,
+                onBack = { destination = AppDestination.MAIN },
+                onSignOut = {
+                    userSession = null
+                    destination = AppDestination.LOGIN
+                },
             )
         }
     }
@@ -157,6 +171,7 @@ private fun BrainBankApp(
 private fun MainContent(
     repository: StudyRepository,
     session: UserSession,
+    onOpenProfile: () -> Unit,
 ) {
     var selectedCategory by remember { mutableStateOf<Category?>(null) }
     var isReviewing by remember { mutableStateOf(false) }
@@ -202,6 +217,7 @@ private fun MainContent(
             onStartReview = { isReviewing = true },
             onOpenStats = { isShowingStats = true },
             onOpenImport = { isImportingFile = true },
+            onOpenProfile = onOpenProfile,
             onCategorySelected = { selectedCategory = it },
         )
     } else {

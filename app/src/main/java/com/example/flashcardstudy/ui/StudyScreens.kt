@@ -88,6 +88,7 @@ fun CategoryListScreen(
     onStartReview: () -> Unit,
     onOpenStats: () -> Unit,
     onOpenImport: () -> Unit,
+    onOpenProfile: () -> Unit,
     onCategorySelected: (Category) -> Unit,
 ) {
     val categories by viewModel.categories.collectAsStateWithLifecycle()
@@ -130,6 +131,7 @@ fun CategoryListScreen(
                     firstName = firstName,
                     initial = initial,
                     isGuest = session is UserSession.Guest,
+                    onAvatarClick = onOpenProfile,
                 )
             }
 
@@ -302,6 +304,7 @@ private fun DashboardHeader(
     firstName: String,
     initial: Char,
     isGuest: Boolean,
+    onAvatarClick: () -> Unit,
 ) {
     Box(
         modifier = Modifier
@@ -312,7 +315,8 @@ private fun DashboardHeader(
                 ),
                 shape = RoundedCornerShape(bottomStart = 32.dp, bottomEnd = 32.dp),
             )
-            .padding(start = 20.dp, end = 20.dp, top = 48.dp, bottom = 28.dp),
+            .statusBarsPadding()
+            .padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 32.dp),
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -334,32 +338,23 @@ private fun DashboardHeader(
                     ),
                 )
             }
-            // Avatar circle
+            // Tappable avatar → opens profile
             Box(
                 modifier = Modifier
                     .size(48.dp)
                     .shadow(6.dp, CircleShape)
                     .clip(CircleShape)
-                    .background(Color.White),
+                    .background(Color.White)
+                    .clickable(onClick = onAvatarClick),
                 contentAlignment = Alignment.Center,
             ) {
-                if (isGuest) {
-                    Text(
-                        text = "G",
-                        style = MaterialTheme.typography.titleLarge.copy(
-                            fontWeight = FontWeight.Bold,
-                            color = BrandPrimary,
-                        ),
-                    )
-                } else {
-                    Text(
-                        text = initial.toString(),
-                        style = MaterialTheme.typography.titleLarge.copy(
-                            fontWeight = FontWeight.Bold,
-                            color = BrandPrimary,
-                        ),
-                    )
-                }
+                Text(
+                    text = if (isGuest) "G" else initial.toString(),
+                    style = MaterialTheme.typography.titleLarge.copy(
+                        fontWeight = FontWeight.Bold,
+                        color = BrandPrimary,
+                    ),
+                )
             }
         }
     }
