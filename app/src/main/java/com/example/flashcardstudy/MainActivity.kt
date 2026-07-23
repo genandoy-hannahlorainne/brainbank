@@ -1,8 +1,8 @@
 package com.example.flashcardstudy
 
 import android.Manifest
-import android.os.Bundle
 import android.os.Build
+import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.fillMaxSize
@@ -14,6 +14,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.core.app.ActivityCompat
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.flashcardstudy.auth.GoogleAuthManager
+import com.example.flashcardstudy.auth.LoginScreen
+import com.example.flashcardstudy.auth.LoginViewModel
+import com.example.flashcardstudy.auth.UserSession
 import com.example.flashcardstudy.data.AppDatabase
 import com.example.flashcardstudy.data.Category
 import com.example.flashcardstudy.data.StudyRepository
@@ -21,9 +27,9 @@ import com.example.flashcardstudy.notifications.NotificationHelper
 import com.example.flashcardstudy.notifications.NotificationScheduler
 import com.example.flashcardstudy.ui.CategoryListScreen
 import com.example.flashcardstudy.ui.CategoryListViewModel
+import com.example.flashcardstudy.ui.FileUploadScreen
 import com.example.flashcardstudy.ui.FlashcardListScreen
 import com.example.flashcardstudy.ui.FlashcardListViewModel
-import com.example.flashcardstudy.ui.FileUploadScreen
 import com.example.flashcardstudy.ui.ReviewScreen
 import com.example.flashcardstudy.ui.ReviewViewModel
 import com.example.flashcardstudy.ui.StatsScreen
@@ -31,7 +37,6 @@ import com.example.flashcardstudy.ui.StatsViewModel
 import com.example.flashcardstudy.ui.onboarding.SplashScreen
 import com.example.flashcardstudy.ui.onboarding.WelcomeScreen
 import com.example.flashcardstudy.ui.theme.FlashcardStudyTheme
-import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -42,6 +47,7 @@ class MainActivity : ComponentActivity() {
     private val repository by lazy {
         StudyRepository(database.categoryDao(), database.flashcardDao(), database.reviewLogDao())
     }
+    private val authManager by lazy { GoogleAuthManager(this) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -75,52 +81,103 @@ class MainActivity : ComponentActivity() {
         setContent {
             FlashcardStudyTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    StudyApp(repository = repository)
+                    BrainBankApp(
+                        repository = repository,
+                        authManager = authManager,
+                    )
                 }
             }
         }
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Top-level navigation destinations
+// ─────────────────────────────────────────────────────────────────────────────
+
 private enum class AppDestination {
-    SPLASH, WELCOME, MAIN
+    SPLASH, WELCOME, LOGIN, MAIN
 }
 
 @Composable
-private fun StudyApp(repository: StudyRepository) {
+private fun BrainBankApp(
+    repository: StudyRepository,
+    authManager: GoogleAuthManager,
+) {
+    // Every cold start begins at SPLASH
     var destination by remember { mutableStateOf(AppDestination.SPLASH) }
+    var userSession by remember { mutableStateOf<UserSession?>(null) }
 
     when (destination) {
-        AppDestination.SPLASH -> SplashScreen(onNext = { destination = AppDestination.WELCOME })
-        AppDestination.WELCOME -> WelcomeScreen(onGetStarted = { destination = AppDestination.MAIN })
-        AppDestination.MAIN -> MainContent(repository = repository)
+        AppDestination.SPLASH -> SplashScreen(
+            onNext = { destination = AppDestination.WELCOME }
+        )
+
+        AppDestination.WELCOME -> WelcomeScreen(
+            onGetStarted = { destination = AppDestination.LOGIN }
+        )
+
+        AppDestination.LOGIN -> {
+            val loginViewModel = viewModel<LoginViewModel>(
+                factory = LoginViewModel.Factory(authManager)
+            )
+            LoginScreen(
+                viewModel = loginViewModel,
+                onSignedIn = { session ->
+                    userSession = session
+                    destination = AppDestination.MAIN
+                },
+                onContinueAsGuest = {
+                    userSession = UserSession.Guest
+                    destination = AppDestination.MAIN
+                },
+            )
+        }
+
+        AppDestination.MAIN -> {
+            val session = userSession ?: UserSession.Guest
+            MainContent(
+                repository = repository,
+                session = session,
+            )
+        }
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Main app content  (existing screens unchanged)
+// ─────────────────────────────────────────────────────────────────────────────
+
 @Composable
-private fun MainContent(repository: StudyRepository) {
+private fun MainContent(
+    repository: StudyRepository,
+    session: UserSession,
+) {
     var selectedCategory by remember { mutableStateOf<Category?>(null) }
     var isReviewing by remember { mutableStateOf(false) }
     var isShowingStats by remember { mutableStateOf(false) }
     var isImportingFile by remember { mutableStateOf(false) }
-    var importedRawText by remember { mutableStateOf("") }
-    val categoryViewModel = androidx.lifecycle.viewmodel.compose.viewModel<CategoryListViewModel>(
-        factory = CategoryListViewModel.Factory(repository),
+
+    // Guest users get an in-memory-only repository wrapper so nothing persists
+    val effectiveRepository = remember(session) {
+        if (session is UserSession.Guest) repository.asReadOnlyGuestRepository()
+        else repository
+    }
+
+    val categoryViewModel = viewModel<CategoryListViewModel>(
+        factory = CategoryListViewModel.Factory(effectiveRepository),
     )
-    val reviewViewModel = androidx.lifecycle.viewmodel.compose.viewModel<ReviewViewModel>(
-        factory = ReviewViewModel.Factory(repository),
+    val reviewViewModel = viewModel<ReviewViewModel>(
+        factory = ReviewViewModel.Factory(effectiveRepository),
     )
-    val statsViewModel = androidx.lifecycle.viewmodel.compose.viewModel<StatsViewModel>(
-        factory = StatsViewModel.Factory(repository),
+    val statsViewModel = viewModel<StatsViewModel>(
+        factory = StatsViewModel.Factory(effectiveRepository),
     )
 
     if (isImportingFile) {
         FileUploadScreen(
             onBack = { isImportingFile = false },
-            onProceed = { rawText ->
-                importedRawText = rawText
-                isImportingFile = false
-            },
+            onProceed = { isImportingFile = false },
         )
     } else if (isReviewing) {
         ReviewScreen(
@@ -141,11 +198,10 @@ private fun MainContent(repository: StudyRepository) {
             onCategorySelected = { selectedCategory = it },
         )
     } else {
-        val flashcardViewModel = androidx.lifecycle.viewmodel.compose.viewModel<FlashcardListViewModel>(
+        val flashcardViewModel = viewModel<FlashcardListViewModel>(
             key = "flashcards-${selectedCategory!!.id}",
-            factory = FlashcardListViewModel.Factory(repository, selectedCategory!!.id),
+            factory = FlashcardListViewModel.Factory(effectiveRepository, selectedCategory!!.id),
         )
-
         FlashcardListScreen(
             category = selectedCategory!!,
             viewModel = flashcardViewModel,
