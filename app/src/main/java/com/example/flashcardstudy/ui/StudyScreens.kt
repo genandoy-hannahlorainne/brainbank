@@ -609,13 +609,15 @@ fun FlashcardListScreen(
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = {
-                editingFlashcardId = null
-                question = ""
-                answer = ""
-                showEditor = true
-            }) {
-                Icon(Icons.Default.Add, contentDescription = "Add flashcard")
+            if (flashcards.isNotEmpty()) {
+                FloatingActionButton(onClick = {
+                    editingFlashcardId = null
+                    question = ""
+                    answer = ""
+                    showEditor = true
+                }) {
+                    Icon(Icons.Default.Add, contentDescription = "Add flashcard")
+                }
             }
         },
     ) { paddingValues ->
@@ -627,6 +629,12 @@ fun FlashcardListScreen(
                     .padding(24.dp),
                 categoryName = category.name,
                 accentColor = parseHexColor(category.colorHex),
+                onAddClick = {
+                    editingFlashcardId = null
+                    question = ""
+                    answer = ""
+                    showEditor = true
+                },
             )
         } else {
             LazyColumn(
@@ -883,6 +891,7 @@ private fun EmptyFlashcardState(
     modifier: Modifier = Modifier,
     categoryName: String,
     accentColor: Color,
+    onAddClick: () -> Unit,
 ) {
     Column(
         modifier = modifier,
@@ -893,7 +902,8 @@ private fun EmptyFlashcardState(
             modifier = Modifier
                 .size(148.dp)
                 .clip(MaterialTheme.shapes.extraLarge)
-                .background(accentColor.copy(alpha = 0.16f)),
+                .background(accentColor.copy(alpha = 0.16f))
+                .clickable(onClick = onAddClick),
             contentAlignment = Alignment.Center,
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
