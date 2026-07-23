@@ -33,6 +33,7 @@ import com.example.flashcardstudy.data.Category
 import com.example.flashcardstudy.data.StudyRepository
 import com.example.flashcardstudy.notifications.NotificationHelper
 import com.example.flashcardstudy.notifications.NotificationScheduler
+import com.example.flashcardstudy.ui.AllDecksScreen
 import com.example.flashcardstudy.ui.CategoryListScreen
 import com.example.flashcardstudy.ui.CategoryListViewModel
 import com.example.flashcardstudy.ui.CategoryReviewViewModel
@@ -219,6 +220,8 @@ private fun MainContent(
     // Review flow: picker first, then per-deck review
     var isPickingReviewDeck by remember { mutableStateOf(false) }
     var reviewingCategoryId by remember { mutableStateOf<Long?>(null) }
+    // All decks screen
+    var isShowingAllDecks by remember { mutableStateOf(false) }
 
     val effectiveRepository = remember(session) {
         if (session is UserSession.Guest) repository.asReadOnlyGuestRepository()
@@ -413,6 +416,19 @@ private fun MainContent(
             )
         }
 
+        // ── All decks screen ─────────────────────────────────────────────
+        isShowingAllDecks -> {
+            BackHandler { isShowingAllDecks = false }
+            AllDecksScreen(
+                viewModel = categoryViewModel,
+                onBack = { isShowingAllDecks = false },
+                onCategorySelected = { category ->
+                    selectedCategory = category
+                    isShowingAllDecks = false
+                },
+            )
+        }
+
         // ── Flashcard list for a category ────────────────────────────────
         selectedCategory != null -> {
             val category = selectedCategory!!
@@ -505,6 +521,7 @@ private fun MainContent(
                 onOpenImport = { isImportingFile = true },
                 onOpenProfile = onOpenProfile,
                 onCategorySelected = { selectedCategory = it },
+                onSeeAllDecks = { isShowingAllDecks = true },
             )
         }
     }

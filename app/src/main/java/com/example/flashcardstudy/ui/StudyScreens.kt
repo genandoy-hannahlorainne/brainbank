@@ -95,6 +95,7 @@ fun CategoryListScreen(
     onOpenImport: () -> Unit,
     onOpenProfile: () -> Unit,
     onCategorySelected: (Category) -> Unit,
+    onSeeAllDecks: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val categories by viewModel.categories.collectAsStateWithLifecycle()
@@ -116,6 +117,10 @@ fun CategoryListScreen(
     val dueToday = statsState.dueBuckets.firstOrNull()?.totalDue ?: 0
     val streak = statsState.currentStreak
     val reviewedToday = statsState.cardsReviewedToday
+
+    // Show max 3 decks on dashboard
+    val displayedCategories = categories.take(3)
+    val hasMoreDecks = categories.size > 3
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -254,7 +259,7 @@ fun CategoryListScreen(
                 Spacer(modifier = Modifier.height(10.dp))
             }
 
-            // ── Category cards ───────────────────────────────────────────────
+            // ── Category cards (max 3) ───────────────────────────────────────
             if (categories.isEmpty()) {
                 item {
                     EmptyDeckState(
@@ -265,12 +270,39 @@ fun CategoryListScreen(
                     )
                 }
             } else {
-                items(categories, key = { it.id }) { category ->
+                items(displayedCategories, key = { it.id }) { category ->
                     DeckCard(
                         modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp),
                         category = category,
                         onClick = { onCategorySelected(category) },
                     )
+                }
+
+                // "See all" button if more than 3 decks
+                if (hasMoreDecks) {
+                    item {
+                        TextButton(
+                            onClick = onSeeAllDecks,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 20.dp, vertical = 8.dp),
+                        ) {
+                            Text(
+                                text = "See all ${categories.size} decks",
+                                style = MaterialTheme.typography.labelLarge.copy(
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = BrandPrimary,
+                                ),
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
+                                contentDescription = null,
+                                tint = BrandPrimary,
+                                modifier = Modifier.size(14.dp),
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -470,7 +502,7 @@ private fun QuickActionButton(
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
-private fun DeckCard(
+internal fun DeckCard(
     modifier: Modifier = Modifier,
     category: Category,
     onClick: () -> Unit,
