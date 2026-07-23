@@ -1,8 +1,10 @@
 package com.example.flashcardstudy.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -10,6 +12,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -21,7 +24,6 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -170,14 +172,34 @@ fun ProfileScreen(
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 20.dp),
+                .padding(horizontal = 20.dp)
+                .clickable { showConfirm = true },
             shape = RoundedCornerShape(20.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             elevation = CardDefaults.cardElevation(1.dp),
         ) {
-            ListItem(
-                modifier = Modifier.clip(RoundedCornerShape(20.dp)),
-                headlineContent = {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(BrandSecondary.copy(alpha = 0.12f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.Logout,
+                        contentDescription = null,
+                        tint = BrandSecondary,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+                Spacer(modifier = Modifier.width(14.dp))
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = if (isGuest) "Sign in with Google" else "Sign out",
                         style = MaterialTheme.typography.titleSmall.copy(
@@ -185,8 +207,7 @@ fun ProfileScreen(
                             color = BrandSecondary,
                         ),
                     )
-                },
-                supportingContent = {
+                    Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = if (isGuest)
                             "Sign in to save your progress"
@@ -196,46 +217,7 @@ fun ProfileScreen(
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
                         ),
                     )
-                },
-                leadingContent = {
-                    Box(
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(BrandSecondary.copy(alpha = 0.12f)),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.Logout,
-                            contentDescription = null,
-                            tint = BrandSecondary,
-                            modifier = Modifier.size(20.dp),
-                        )
-                    }
-                },
-                colors = ListItemDefaults.colors(
-                    containerColor = Color.Transparent,
-                ),
-                // Tap the whole row
-                modifier = Modifier
-                    .clip(RoundedCornerShape(20.dp))
-                    .then(
-                        Modifier.background(Color.Transparent)
-                    )
-            )
-            // Invisible clickable overlay on the ListItem
-            TextButton(
-                onClick = { showConfirm = true },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 4.dp),
-                shape = RoundedCornerShape(12.dp),
-            ) {
-                Text(
-                    text = if (isGuest) "Switch to Google account" else "Sign out",
-                    color = BrandSecondary,
-                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
-                )
+                }
             }
         }
 
