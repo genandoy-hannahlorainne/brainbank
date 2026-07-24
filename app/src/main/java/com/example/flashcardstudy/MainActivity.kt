@@ -45,7 +45,11 @@ import com.example.flashcardstudy.ui.FileUploadScreen
 import com.example.flashcardstudy.ui.FlashcardListScreen
 import com.example.flashcardstudy.ui.FlashcardListViewModel
 import com.example.flashcardstudy.ui.GeneratingScreen
+import com.example.flashcardstudy.ui.CategoryQuizViewModel
 import com.example.flashcardstudy.ui.GroupReviewViewModel
+import com.example.flashcardstudy.ui.QuizScreen
+import com.example.flashcardstudy.ui.QuizViewModel
+import com.example.flashcardstudy.ui.StudyModePicker
 import com.example.flashcardstudy.ui.ImportFlowStep
 import com.example.flashcardstudy.ui.ImportFlowViewModel
 import com.example.flashcardstudy.ui.NameDeckScreen
@@ -203,6 +207,8 @@ private fun BrainBankApp(
     }
 }
 
+private enum class ReviewSource { DECK_PICKER_CAT, DECK_SCREEN, GROUP }
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Main app content
 // ─────────────────────────────────────────────────────────────────────────────
@@ -216,15 +222,21 @@ private fun MainContent(
     var selectedCategory by remember { mutableStateOf<Category?>(null) }
     var selectedGroup by remember { mutableStateOf<com.example.flashcardstudy.ui.FlashcardGroup?>(null) }
     var isReviewingGroup by remember { mutableStateOf(false) }
+    var isQuizModeGroup by remember { mutableStateOf(false) }
     var isShowingStats by remember { mutableStateOf(false) }
     var isImportingFile by remember { mutableStateOf(false) }
     var isImportingIntoDeck by remember { mutableStateOf(false) }
     var showTopicDialog by remember { mutableStateOf(false) }
     var topicInput by remember { mutableStateOf("") }
     var isAiGeneratingForDeck by remember { mutableStateOf(false) }
-    // Review flow: picker first, then per-deck review
+    // Review flow
     var isPickingReviewDeck by remember { mutableStateOf(false) }
     var reviewingCategoryId by remember { mutableStateOf<Long?>(null) }
+    var isQuizModeCategory by remember { mutableStateOf(false) }
+    // Study mode picker — tracks where "Review" was tapped from
+    var showStudyModePicker by remember { mutableStateOf(false) }
+    var pendingReviewSource by remember { mutableStateOf<ReviewSource?>(null) }
+    var pendingReviewCategoryId by remember { mutableStateOf<Long?>(null) }
     // All decks screen
     var isShowingAllDecks by remember { mutableStateOf(false) }
 
@@ -387,18 +399,39 @@ private fun MainContent(
                 viewModel = reviewPickerViewModel,
                 onBack = { isPickingReviewDeck = false },
                 onDeckSelected = { categoryId ->
-                    reviewingCategoryId = categoryId
-                    isPickingReviewDeck = false
+                    pendingReviewCategoryId = categoryId
+                    pendingReviewSource = ReviewSource.DECK_PICKER_CAT
+                    showStudyModePicker = true
                 },
             )
         }
 
-        // ── Per-deck review ──────────────────────────────────────────────
+        // ── Per-deck quiz mode (overrides selectedCategory) ─────────────
+        reviewingCategoryId != null && isQuizModeCategory -> {
+            val catId = reviewingCategoryId!!
+            BackHandler {
+                reviewingCategoryId = null
+                isQuizModeCategory = false
+            }
+            val quizVm = viewModel<CategoryQuizViewModel>(
+                key = "quiz-cat-$catId",
+                factory = CategoryQuizViewModel.Factory(effectiveRepository, catId),
+            )
+            QuizScreen(
+                viewModel = quizVm,
+                onBack = {
+                    reviewingCategoryId = null
+                    isQuizModeCategory = false
+                },
+            )
+        }
+
+        // ── Per-deck flashcard review ────────────────────────────────────
         reviewingCategoryId != null -> {
             val catId = reviewingCategoryId!!
             BackHandler {
                 reviewingCategoryId = null
-                isPickingReviewDeck = true
+                isQuizModeCategory = false
             }
             val deckReviewVm = viewModel<CategoryReviewViewModel>(
                 key = "quick-review-$catId",
@@ -408,7 +441,7 @@ private fun MainContent(
                 viewModel = deckReviewVm,
                 onBack = {
                     reviewingCategoryId = null
-                    isPickingReviewDeck = true
+                    isQuizModeCategory = false
                 },
             )
         }
@@ -433,6 +466,34 @@ private fun MainContent(
                     selectedCategory = category
                     isShowingAllDecks = false
                 },
+            )
+        }
+
+        // ── Group quiz mode (top-level to avoid BackHandler conflicts) ───
+        selectedCategory != null && selectedGroup != null && isReviewingGroup && isQuizModeGroup -> {
+            val group = selectedGroup!!
+            BackHandler { isReviewingGroup = false; isQuizModeGroup = false }
+            val quizVm = viewModel<QuizViewModel>(
+                key = "quiz-group-${group.source}-${group.sourceLabel}",
+                factory = QuizViewModel.Factory(effectiveRepository, group.cards),
+            )
+            QuizScreen(
+                viewModel = quizVm,
+                onBack = { isReviewingGroup = false; isQuizModeGroup = false },
+            )
+        }
+
+        // ── Group flashcard review (top-level) ───────────────────────────
+        selectedCategory != null && selectedGroup != null && isReviewingGroup -> {
+            val group = selectedGroup!!
+            BackHandler { isReviewingGroup = false }
+            val groupReviewVm = viewModel<GroupReviewViewModel>(
+                key = "group-review-${group.source}-${group.sourceLabel}",
+                factory = GroupReviewViewModel.Factory(effectiveRepository, group.cards),
+            )
+            ReviewScreen(
+                viewModel = groupReviewVm,
+                onBack = { isReviewingGroup = false },
             )
         }
 
@@ -506,39 +567,26 @@ private fun MainContent(
                 // ── Card group detail (tapped a source card) ──────────────
                 if (selectedGroup != null) {
                     val group = selectedGroup!!
-                    BackHandler {
-                        isReviewingGroup = false
-                        selectedGroup = null
-                    }
-
-                    if (isReviewingGroup) {
-                        // ── Review only this group's cards ────────────────
-                        BackHandler { isReviewingGroup = false }
-                        val groupReviewVm = viewModel<GroupReviewViewModel>(
-                            key = "group-review-${group.source}-${group.sourceLabel}",
-                            factory = GroupReviewViewModel.Factory(
-                                effectiveRepository,
-                                group.cards,
-                            ),
-                        )
-                        ReviewScreen(
-                            viewModel = groupReviewVm,
-                            onBack = { isReviewingGroup = false },
-                        )
-                    } else {
-                        CardGroupDetailScreen(
-                            group = group,
-                            accentColor = parseHexColor(category.colorHex),
-                            viewModel = vm,
-                            onBack = { selectedGroup = null },
-                            onStartReview = { isReviewingGroup = true },
-                        )
-                    }
+                    BackHandler { selectedGroup = null }
+                    CardGroupDetailScreen(
+                        group = group,
+                        accentColor = parseHexColor(category.colorHex),
+                        viewModel = vm,
+                        onBack = { selectedGroup = null },
+                        onStartReview = {
+                            pendingReviewSource = ReviewSource.GROUP
+                            showStudyModePicker = true
+                        },
+                    )
                 } else {
                     FlashcardListScreen(
                         category = category,
                         viewModel = vm,
-                        onStartReview = { reviewingCategoryId = category.id },
+                        onStartReview = {
+                            pendingReviewSource = ReviewSource.DECK_SCREEN
+                            pendingReviewCategoryId = category.id
+                            showStudyModePicker = true
+                        },
                         onBack = { selectedCategory = null; selectedGroup = null; isReviewingGroup = false },
                         onAiGenerate = { showTopicDialog = true },
                         onImportFile = { isImportingIntoDeck = true },
@@ -567,9 +615,62 @@ private fun MainContent(
         }
     }
 
+    // ── Study mode picker ────────────────────────────────────────────────
+    if (showStudyModePicker) {
+        StudyModePicker(
+            onDismiss = {
+                showStudyModePicker = false
+                pendingReviewSource = null
+                pendingReviewCategoryId = null
+            },
+            onFlashcard = {
+                showStudyModePicker = false
+                when (pendingReviewSource) {
+                    ReviewSource.DECK_PICKER_CAT -> {
+                        reviewingCategoryId = pendingReviewCategoryId
+                        isQuizModeCategory = false
+                        isPickingReviewDeck = false
+                    }
+                    ReviewSource.DECK_SCREEN -> {
+                        reviewingCategoryId = pendingReviewCategoryId
+                        isQuizModeCategory = false
+                    }
+                    ReviewSource.GROUP -> {
+                        isReviewingGroup = true
+                        isQuizModeGroup = false
+                    }
+                    null -> {}
+                }
+                pendingReviewSource = null
+                pendingReviewCategoryId = null
+            },
+            onQuiz = {
+                showStudyModePicker = false
+                when (pendingReviewSource) {
+                    ReviewSource.DECK_PICKER_CAT -> {
+                        reviewingCategoryId = pendingReviewCategoryId
+                        isQuizModeCategory = true
+                        isPickingReviewDeck = false
+                    }
+                    ReviewSource.DECK_SCREEN -> {
+                        reviewingCategoryId = pendingReviewCategoryId
+                        isQuizModeCategory = true
+                    }
+                    ReviewSource.GROUP -> {
+                        isReviewingGroup = true
+                        isQuizModeGroup = true
+                    }
+                    null -> {}
+                }
+                pendingReviewSource = null
+                pendingReviewCategoryId = null
+            },
+        )
+    }
+
     // ── Topic input dialog ───────────────────────────────────────────────
     if (showTopicDialog) {
-        AlertDialog(
+        AlertDialog(    
             onDismissRequest = {
                 showTopicDialog = false
                 topicInput = ""

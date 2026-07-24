@@ -1217,6 +1217,92 @@ private fun EmptyFlashcardState(
 // ─────────────────────────────────────────────────────────────────────────────
 // "Add cards" choice sheet — shown when user taps FAB inside a deck
 // ─────────────────────────────────────────────────────────────────────────────
+// Study mode picker — shown before any review session
+// ─────────────────────────────────────────────────────────────────────────────
+
+@Composable
+fun StudyModePicker(
+    onDismiss: () -> Unit,
+    onFlashcard: () -> Unit,
+    onQuiz: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(text = "How do you want to study?", fontWeight = FontWeight.SemiBold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Spacer(modifier = Modifier.height(4.dp))
+                StudyModeOption(
+                    emoji = "🃏",
+                    title = "Flashcard Mode",
+                    subtitle = "Flip cards and self-grade your recall",
+                    color = BrandPrimary,
+                    onClick = onFlashcard,
+                )
+                StudyModeOption(
+                    emoji = "🎯",
+                    title = "Quiz Mode",
+                    subtitle = "4 choices — auto-scored, great for exams",
+                    color = BrandSecondary,
+                    onClick = onQuiz,
+                )
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(text = "Cancel") }
+        },
+    )
+}
+
+@Composable
+private fun StudyModeOption(
+    emoji: String,
+    title: String,
+    subtitle: String,
+    color: Color,
+    onClick: () -> Unit,
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = color.copy(alpha = 0.08f)),
+        elevation = CardDefaults.cardElevation(0.dp),
+    ) {
+        Row(
+            modifier = Modifier.padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(text = emoji, style = MaterialTheme.typography.titleLarge)
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleSmall.copy(
+                        fontWeight = FontWeight.SemiBold,
+                        color = color,
+                    ),
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                    ),
+                )
+            }
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
+                contentDescription = null,
+                tint = color.copy(alpha = 0.5f),
+                modifier = Modifier.size(14.dp),
+            )
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
 private fun AddCardsSheet(
