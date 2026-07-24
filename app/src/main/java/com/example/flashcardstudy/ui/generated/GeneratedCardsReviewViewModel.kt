@@ -38,8 +38,9 @@ class GeneratedCardsReviewViewModel(
     private val repository: StudyRepository,
     private val category: Category,
     generatedCards: List<GeneratedFlashcard>,
-    /** Source tag applied when saving — defaults to AI_TOPIC, override for file imports. */
     private val cardSource: CardSource = CardSource.AI_TOPIC,
+    /** Label stored on each card — topic name, filename, etc. */
+    private val sourceLabel: String? = null,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(
@@ -122,7 +123,7 @@ class GeneratedCardsReviewViewModel(
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isSaving = true, errorMessage = null, saveCompleted = false)
             try {
-                repository.addFlashcards(category.id, validCards, cardSource)
+                repository.addFlashcards(category.id, validCards, cardSource, sourceLabel)
                 _uiState.value = _uiState.value.copy(isSaving = false, saveCompleted = true)
             } catch (exception: Exception) {
                 _uiState.value = _uiState.value.copy(
@@ -157,9 +158,10 @@ class GeneratedCardsReviewViewModel(
         private val category: Category,
         private val generatedCards: List<GeneratedFlashcard>,
         private val cardSource: CardSource = CardSource.AI_TOPIC,
+        private val sourceLabel: String? = null,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            GeneratedCardsReviewViewModel(repository, category, generatedCards, cardSource) as T
+            GeneratedCardsReviewViewModel(repository, category, generatedCards, cardSource, sourceLabel) as T
     }
 }

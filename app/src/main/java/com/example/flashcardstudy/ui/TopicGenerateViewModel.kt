@@ -13,7 +13,7 @@ import kotlinx.coroutines.launch
 sealed class TopicGenerateState {
     object Idle : TopicGenerateState()
     object Generating : TopicGenerateState()
-    data class Success(val cards: List<GeneratedFlashcard>) : TopicGenerateState()
+    data class Success(val cards: List<GeneratedFlashcard>, val topic: String) : TopicGenerateState()
     data class Error(val message: String) : TopicGenerateState()
 }
 
@@ -35,7 +35,7 @@ class TopicGenerateViewModel(
 
             val result = generatorService.generateFlashcardsForTopic(trimmed)
             _state.value = result.fold(
-                onSuccess = { cards -> TopicGenerateState.Success(cards) },
+                onSuccess = { cards -> TopicGenerateState.Success(cards, trimmed) },
                 onFailure = { error ->
                     TopicGenerateState.Error(error.message ?: "Failed to generate cards.")
                 },

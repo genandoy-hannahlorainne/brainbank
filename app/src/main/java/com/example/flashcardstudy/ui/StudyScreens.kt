@@ -509,6 +509,7 @@ internal fun DeckCard(
     onClick: () -> Unit,
 ) {
     val accentColor = parseHexColor(category.colorHex)
+    val deckIcon = deckIconFor(category.name)
 
     Card(
         modifier = modifier
@@ -522,19 +523,19 @@ internal fun DeckCard(
             modifier = Modifier.padding(16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // Color badge
+            // Icon badge
             Box(
                 modifier = Modifier
-                    .size(46.dp)
-                    .clip(RoundedCornerShape(14.dp))
+                    .size(52.dp)
+                    .clip(RoundedCornerShape(16.dp))
                     .background(accentColor.copy(alpha = 0.15f)),
                 contentAlignment = Alignment.Center,
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(18.dp)
-                        .clip(CircleShape)
-                        .background(accentColor),
+                Icon(
+                    imageVector = deckIcon,
+                    contentDescription = null,
+                    tint = accentColor,
+                    modifier = Modifier.size(26.dp),
                 )
             }
             Spacer(modifier = Modifier.width(14.dp))
@@ -621,12 +622,13 @@ fun FlashcardListScreen(
     onBack: () -> Unit,
     onAiGenerate: () -> Unit = {},
     onImportFile: () -> Unit = {},
+    onGroupSelected: (FlashcardGroup) -> Unit = {},
 ) {
     val flashcards by viewModel.flashcards.collectAsStateWithLifecycle()
     val groups by viewModel.groups.collectAsStateWithLifecycle()
 
-    var showEditor by rememberSaveable { mutableStateOf(false) }
     var showAddSheet by rememberSaveable { mutableStateOf(false) }
+    var showEditor by rememberSaveable { mutableStateOf(false) }
     var editingFlashcardId by rememberSaveable { mutableStateOf<Long?>(null) }
     var question by rememberSaveable { mutableStateOf("") }
     var answer by rememberSaveable { mutableStateOf("") }
@@ -644,6 +646,7 @@ fun FlashcardListScreen(
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
+        containerColor = BrandBackground,
         topBar = {
             Box(
                 modifier = Modifier
@@ -656,7 +659,16 @@ fun FlashcardListScreen(
                     ),
             ) {
                 TopAppBar(
-                    title = { Text(text = category.name, color = Color.White) },
+                    title = {
+                        Column {
+                            Text(text = category.name, color = Color.White)
+                            Text(
+                                text = "${flashcards.size} ${if (flashcards.size == 1) "card" else "cards"}",
+                                color = Color.White.copy(alpha = 0.75f),
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                    },
                     navigationIcon = {
                         IconButton(onClick = onBack) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
@@ -672,7 +684,6 @@ fun FlashcardListScreen(
             }
         },
         floatingActionButton = {
-            // Always show FAB so user can add cards even when deck already has cards
             FloatingActionButton(onClick = { showAddSheet = true }) {
                 Icon(Icons.Default.Add, contentDescription = "Add cards")
             }
@@ -691,43 +702,34 @@ fun FlashcardListScreen(
                 onAiGenerate = onAiGenerate,
             )
         } else {
-            // ── Grouped folder view ───────────────────────────────────────
+            // ── Source group grid ─────────────────────────────────────────
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(paddingValues)
                     .padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
                 contentPadding = PaddingValues(vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                groups.forEach { group ->
-                    // ── Folder header row ─────────────────────────────────
-                    item(key = "header-${group.source}") {
-                        FlashcardGroupHeader(
-                            group = group,
-                            accentColor = accentColor,
-                            onToggle = { viewModel.toggleGroup(group.source) },
-                        )
-                    }
-
-                    // ── Cards inside the folder (only when expanded) ──────
-                    if (group.isExpanded) {
-                        items(group.cards, key = { "card-${it.id}" }) { flashcard ->
-                            FlashcardRow(
-                                flashcard = flashcard,
+                // Render groups in pairs as a 2-column grid
+                val chunked = groups.chunked(2)
+                items(chunked.size, key = { chunked[it].first().let { g -> "${g.source}-${g.sourceLabel}" } }) { idx ->
+                    val pair = chunked[idx]
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        pair.forEach { group ->
+                            SourceGroupCard(
+                                modifier = Modifier.weight(1f),
+                                group = group,
                                 accentColor = accentColor,
-                                onEdit = {
-                                    editingFlashcardId = flashcard.id
-                                    question = flashcard.question
-                                    answer = flashcard.answer
-                                    showEditor = true
-                                },
-                                onDelete = { viewModel.deleteFlashcard(flashcard) },
+                                onClick = { onGroupSelected(group) },
                             )
                         }
-                        // Small spacer after last card in group
-                        item(key = "spacer-${group.source}") {
-                            Spacer(modifier = Modifier.height(4.dp))
+                        // Fill empty slot if odd number of groups
+                        if (pair.size == 1) {
+                            Spacer(modifier = Modifier.weight(1f))
                         }
                     }
                 }
@@ -758,13 +760,10 @@ fun FlashcardListScreen(
         )
     }
 
-    // ── Manual card editor dialog ─────────────────────────────────────────
+    // ── Manual card editor dialog (for "add manually") ────────────────────
     if (showEditor) {
         AlertDialog(
-            onDismissRequest = {
-                showEditor = false
-                editingFlashcardId = null
-            },
+            onDismissRequest = { showEditor = false; editingFlashcardId = null },
             title = { Text(text = if (editingFlashcard == null) "Add flashcard" else "Edit flashcard") },
             text = {
                 Column {
@@ -786,26 +785,16 @@ fun FlashcardListScreen(
                 }
             },
             confirmButton = {
-                TextButton(
-                    onClick = {
-                        val existing = editingFlashcard
-                        if (existing == null) {
-                            viewModel.addFlashcard(question, answer)
-                        } else {
-                            viewModel.updateFlashcard(existing, question, answer)
-                        }
-                        showEditor = false
-                        editingFlashcardId = null
-                    }
-                ) {
-                    Text(text = "Save")
-                }
-            },
-            dismissButton = {
                 TextButton(onClick = {
+                    val existing = editingFlashcard
+                    if (existing == null) viewModel.addFlashcard(question, answer)
+                    else viewModel.updateFlashcard(existing, question, answer)
                     showEditor = false
                     editingFlashcardId = null
-                }) {
+                }) { Text(text = "Save") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEditor = false; editingFlashcardId = null }) {
                     Text(text = "Cancel")
                 }
             },
@@ -814,62 +803,42 @@ fun FlashcardListScreen(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Folder header — tappable row that expands / collapses a group
-// ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
-private fun FlashcardGroupHeader(
+private fun SourceGroupCard(
+    modifier: Modifier = Modifier,
     group: FlashcardGroup,
     accentColor: Color,
-    onToggle: () -> Unit,
+    onClick: () -> Unit,
 ) {
-    val rotationAngle by animateFloatAsState(
-        targetValue = if (group.isExpanded) 90f else 0f,
-        animationSpec = spring(dampingRatio = 0.8f, stiffness = 300f),
-        label = "chevron",
-    )
-
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onToggle),
-        shape = RoundedCornerShape(14.dp),
+        modifier = modifier
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(
-            containerColor = accentColor.copy(alpha = if (group.isExpanded) 0.14f else 0.07f),
+            containerColor = accentColor.copy(alpha = 0.10f),
         ),
         elevation = CardDefaults.cardElevation(0.dp),
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            // Emoji icon
-            Text(text = group.emoji, style = MaterialTheme.typography.titleLarge)
-
-            // Label + count
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = group.label,
-                    style = MaterialTheme.typography.titleSmall,
+            Text(text = group.emoji, style = MaterialTheme.typography.headlineMedium)
+            Text(
+                text = group.label,
+                style = MaterialTheme.typography.titleSmall.copy(
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface,
-                )
-                Text(
-                    text = "${group.cards.size} ${if (group.cards.size == 1) "card" else "cards"}",
-                    style = MaterialTheme.typography.bodySmall,
+                ),
+                maxLines = 2,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            )
+            Text(
+                text = "${group.cards.size} ${if (group.cards.size == 1) "card" else "cards"}",
+                style = MaterialTheme.typography.bodySmall.copy(
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
-                )
-            }
-
-            // Animated chevron
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
-                contentDescription = if (group.isExpanded) "Collapse" else "Expand",
-                modifier = Modifier
-                    .size(14.dp)
-                    .graphicsLayer { rotationZ = rotationAngle },
-                tint = accentColor,
+                ),
             )
         }
     }

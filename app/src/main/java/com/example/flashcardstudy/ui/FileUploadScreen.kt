@@ -65,15 +65,10 @@ private fun mimeTypeToCardSource(mimeType: String): CardSource = when {
 @OptIn(ExperimentalMaterial3Api::class)
 fun FileUploadScreen(
     onBack: () -> Unit,
-    /** Called with (extractedText, cardSource) when user confirms generation. */
-    onProceed: (String, CardSource) -> Unit,
+    /** Called with (extractedText, cardSource, fileName) when user confirms generation. */
+    onProceed: (String, CardSource, String) -> Unit,
     externalError: String? = null,
     onExternalErrorDismissed: () -> Unit = {},
-    /**
-     * When true the system file picker opens immediately on first composition.
-     * Use this for the in-deck import flow so the user doesn't have to tap
-     * an extra "Choose file" button after already choosing "Import from file".
-     */
     autoLaunch: Boolean = false,
 ) {
     val context = LocalContext.current
@@ -244,7 +239,7 @@ fun FileUploadScreen(
                 TextButton(
                     onClick = {
                         showProceedDialog = false
-                        onProceed(extractedText, detectedSource)
+                        onProceed(extractedText, detectedSource, fileName)
                     }
                 ) {
                     Text(text = "Generate")

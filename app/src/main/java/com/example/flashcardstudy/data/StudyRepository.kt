@@ -32,6 +32,7 @@ open class StudyRepository(
         question: String,
         answer: String,
         source: CardSource = CardSource.MANUAL,
+        sourceLabel: String? = null,
     ): Long {
         return flashcardDao.insert(
             Flashcard(
@@ -43,6 +44,7 @@ open class StudyRepository(
                 repetitions = 0,
                 nextReviewDate = System.currentTimeMillis(),
                 source = source,
+                sourceLabel = sourceLabel,
             )
         )
     }
@@ -51,6 +53,7 @@ open class StudyRepository(
         categoryId: Long,
         flashcards: List<GeneratedFlashcard>,
         source: CardSource = CardSource.AI_FILE,
+        sourceLabel: String? = null,
     ): List<Long> {
         return flashcardDao.insertAll(
             flashcards.map { generatedCard ->
@@ -63,6 +66,7 @@ open class StudyRepository(
                     repetitions = 0,
                     nextReviewDate = System.currentTimeMillis(),
                     source = source,
+                    sourceLabel = sourceLabel,
                 )
             }
         )
@@ -140,7 +144,7 @@ private class GuestStudyRepository(
         return id
     }
 
-    override suspend fun addFlashcard(categoryId: Long, question: String, answer: String, source: CardSource): Long {
+    override suspend fun addFlashcard(categoryId: Long, question: String, answer: String, source: CardSource, sourceLabel: String?): Long {
         val id = nextFlashcardId--
         guestFlashcards.value = guestFlashcards.value + Flashcard(
             id = id, categoryId = categoryId,
@@ -148,12 +152,13 @@ private class GuestStudyRepository(
             interval = 1, easeFactor = 2.5, repetitions = 0,
             nextReviewDate = System.currentTimeMillis(),
             source = source,
+            sourceLabel = sourceLabel,
         )
         return id
     }
 
-    override suspend fun addFlashcards(categoryId: Long, flashcards: List<com.example.flashcardstudy.flashcards.GeneratedFlashcard>, source: CardSource): List<Long> {
-        return flashcards.map { addFlashcard(categoryId, it.question, it.answer, source) }
+    override suspend fun addFlashcards(categoryId: Long, flashcards: List<com.example.flashcardstudy.flashcards.GeneratedFlashcard>, source: CardSource, sourceLabel: String?): List<Long> {
+        return flashcards.map { addFlashcard(categoryId, it.question, it.answer, source, sourceLabel) }
     }
 
     override suspend fun getFlashcards(categoryId: Long): List<Flashcard> =

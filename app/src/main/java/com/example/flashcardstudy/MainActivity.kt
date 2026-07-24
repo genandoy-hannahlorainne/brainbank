@@ -34,6 +34,7 @@ import com.example.flashcardstudy.data.StudyRepository
 import com.example.flashcardstudy.notifications.NotificationHelper
 import com.example.flashcardstudy.notifications.NotificationScheduler
 import com.example.flashcardstudy.ui.AllDecksScreen
+import com.example.flashcardstudy.ui.CardGroupDetailScreen
 import com.example.flashcardstudy.ui.CategoryListScreen
 import com.example.flashcardstudy.ui.CategoryListViewModel
 import com.example.flashcardstudy.ui.CategoryReviewViewModel
@@ -48,6 +49,7 @@ import com.example.flashcardstudy.ui.ImportFlowStep
 import com.example.flashcardstudy.ui.ImportFlowViewModel
 import com.example.flashcardstudy.ui.NameDeckScreen
 import com.example.flashcardstudy.ui.ProfileScreen
+import com.example.flashcardstudy.ui.parseHexColor
 import com.example.flashcardstudy.ui.ReviewPickerScreen
 import com.example.flashcardstudy.ui.ReviewPickerViewModel
 import com.example.flashcardstudy.ui.ReviewScreen
@@ -211,6 +213,7 @@ private fun MainContent(
     onOpenProfile: () -> Unit,
 ) {
     var selectedCategory by remember { mutableStateOf<Category?>(null) }
+    var selectedGroup by remember { mutableStateOf<com.example.flashcardstudy.ui.FlashcardGroup?>(null) }
     var isShowingStats by remember { mutableStateOf(false) }
     var isImportingFile by remember { mutableStateOf(false) }
     var isImportingIntoDeck by remember { mutableStateOf(false) }
@@ -289,17 +292,19 @@ private fun MainContent(
         }
 
         topicGenerateState is TopicGenerateState.Success && selectedCategory != null -> {
-            val cards = (topicGenerateState as TopicGenerateState.Success).cards
+            val state = topicGenerateState as TopicGenerateState.Success
+            val cards = state.cards
+            val topic = state.topic
             val category = selectedCategory!!
-            BackHandler {
-                topicGenerateViewModel.reset()
-            }
+            BackHandler { topicGenerateViewModel.reset() }
             val generatedReviewViewModel = viewModel<GeneratedCardsReviewViewModel>(
-                key = "ai-review-${category.id}",
+                key = "ai-review-${category.id}-$topic",
                 factory = GeneratedCardsReviewViewModel.Factory(
                     effectiveRepository,
                     category,
                     cards,
+                    cardSource = com.example.flashcardstudy.data.CardSource.AI_TOPIC,
+                    sourceLabel = topic,
                 ),
             )
             GeneratedCardsReviewScreen(
@@ -326,7 +331,7 @@ private fun MainContent(
                             importFlowViewModel.backToFileSelection()
                             isImportingFile = false
                         },
-                        onProceed = { extractedText, cardSource ->
+                        onProceed = { extractedText, cardSource, fileName ->
                             importFlowViewModel.generateCards(extractedText, cardSource)
                         },
                         externalError = importUiState.errorMessage,
@@ -448,8 +453,8 @@ private fun MainContent(
                                 dim.backToFileSelection()
                                 isImportingIntoDeck = false
                             },
-                            onProceed = { text, source ->
-                                dim.generateCards(text, source)
+                            onProceed = { text, source, fileName ->
+                                dim.generateCards(text, source, fileName)
                             },
                             externalError = deckImportUiState.errorMessage,
                             onExternalErrorDismissed = { dim.clearError() },
@@ -465,12 +470,13 @@ private fun MainContent(
                     is DeckImportStep.ReviewCards -> {
                         BackHandler { dim.backToFileSelection() }
                         val reviewVm = viewModel<GeneratedCardsReviewViewModel>(
-                            key = "deck-import-review-${category.id}",
+                            key = "deck-import-review-${category.id}-${step.sourceLabel}",
                             factory = GeneratedCardsReviewViewModel.Factory(
                                 effectiveRepository,
                                 category,
                                 step.cards,
                                 step.source,
+                                step.sourceLabel,
                             ),
                         )
                         GeneratedCardsReviewScreen(
@@ -493,17 +499,29 @@ private fun MainContent(
                 }
             } else {
                 // ── Normal deck view ──────────────────────────────────────
-                BackHandler { selectedCategory = null }
-                FlashcardListScreen(
-                    category = category,
-                    viewModel = vm,
-                    onStartReview = {
-                        reviewingCategoryId = category.id
-                    },
-                    onBack = { selectedCategory = null },
-                    onAiGenerate = { showTopicDialog = true },
-                    onImportFile = { isImportingIntoDeck = true },
-                )
+                BackHandler { selectedCategory = null; selectedGroup = null }
+
+                // ── Card group detail (tapped a source card) ──────────────
+                if (selectedGroup != null) {
+                    val group = selectedGroup!!
+                    BackHandler { selectedGroup = null }
+                    CardGroupDetailScreen(
+                        group = group,
+                        accentColor = parseHexColor(category.colorHex),
+                        viewModel = vm,
+                        onBack = { selectedGroup = null },
+                    )
+                } else {
+                    FlashcardListScreen(
+                        category = category,
+                        viewModel = vm,
+                        onStartReview = { reviewingCategoryId = category.id },
+                        onBack = { selectedCategory = null; selectedGroup = null },
+                        onAiGenerate = { showTopicDialog = true },
+                        onImportFile = { isImportingIntoDeck = true },
+                        onGroupSelected = { group -> selectedGroup = group },
+                    )
+                }
             }
         }
 

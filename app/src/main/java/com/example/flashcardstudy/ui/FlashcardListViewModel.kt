@@ -12,10 +12,14 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 /**
- * A named, collapsible group of flashcards shown as a "folder" in the deck view.
+ * A named, collapsible group of flashcards shown as a square card in the deck grid.
+ * Groups are keyed by (source, sourceLabel) so multiple AI topic sessions each get
+ * their own card.
  */
 data class FlashcardGroup(
     val source: CardSource,
+    /** Topic name, filename, or null for manually added cards. */
+    val sourceLabel: String?,
     val label: String,
     val emoji: String,
     val cards: List<Flashcard>,
@@ -30,7 +34,7 @@ class FlashcardListViewModel(
     private val _flashcards = MutableStateFlow<List<Flashcard>>(emptyList())
     val flashcards: StateFlow<List<Flashcard>> = _flashcards.asStateFlow()
 
-    /** Flashcards grouped by source, each group collapsible. */
+    /** Flashcards grouped by (source, sourceLabel) — each group is a square card. */
     private val _groups = MutableStateFlow<List<FlashcardGroup>>(emptyList())
     val groups: StateFlow<List<FlashcardGroup>> = _groups.asStateFlow()
 
@@ -43,13 +47,6 @@ class FlashcardListViewModel(
             val cards = repository.getFlashcards(categoryId)
             _flashcards.value = cards
             _groups.value = buildGroups(cards, _groups.value)
-        }
-    }
-
-    /** Toggle expand / collapse for a group by its [CardSource]. */
-    fun toggleGroup(source: CardSource) {
-        _groups.value = _groups.value.map { group ->
-            if (group.source == source) group.copy(isExpanded = !group.isExpanded) else group
         }
     }
 
@@ -82,41 +79,53 @@ class FlashcardListViewModel(
         cards: List<Flashcard>,
         previous: List<FlashcardGroup>,
     ): List<FlashcardGroup> {
-        // Preserve expand/collapse state across refreshes
-        val expandedSources = previous.filter { it.isExpanded }.map { it.source }.toSet()
+        // Preserve expand/collapse state across refreshes using (source, sourceLabel) key
+        val expandedKeys = previous.filter { it.isExpanded }
+            .map { it.source to it.sourceLabel }.toSet()
 
-        val bySource = cards.groupBy { it.source }
+        // Group by (source, sourceLabel)
+        val byKey = cards.groupBy { it.source to it.sourceLabel }
 
-        // Desired display order
-        val order = listOf(
-            CardSource.AI_TOPIC,
-            CardSource.AI_PDF,
-            CardSource.AI_IMAGE,
-            CardSource.AI_DOC,
-            CardSource.AI_FILE,
-            CardSource.MANUAL,
+        // Sort: AI_TOPIC entries first (alphabetical by label), then other sources,
+        // then MANUAL last
+        val sortedKeys = byKey.keys.sortedWith(
+            compareBy(
+                { sourceOrder(it.first) },
+                { it.second ?: "" },
+            )
         )
 
-        return order
-            .filter { bySource.containsKey(it) }
-            .map { source ->
-                FlashcardGroup(
-                    source = source,
-                    label = labelFor(source),
-                    emoji = emojiFor(source),
-                    cards = bySource[source].orEmpty(),
-                    isExpanded = source in expandedSources,
-                )
-            }
+        return sortedKeys.map { key ->
+            val (source, label) = key
+            FlashcardGroup(
+                source = source,
+                sourceLabel = label,
+                label = displayLabel(source, label),
+                emoji = emojiFor(source),
+                cards = byKey[key].orEmpty(),
+                isExpanded = key in expandedKeys,
+            )
+        }
     }
 
-    private fun labelFor(source: CardSource) = when (source) {
-        CardSource.AI_TOPIC -> "AI Topic"
-        CardSource.AI_PDF   -> "PDF Import"
-        CardSource.AI_IMAGE -> "Image Import"
-        CardSource.AI_DOC   -> "Document Import"
-        CardSource.AI_FILE  -> "File Import"
-        CardSource.MANUAL   -> "Manually Added"
+    private fun sourceOrder(source: CardSource) = when (source) {
+        CardSource.AI_TOPIC -> 0
+        CardSource.AI_PDF   -> 1
+        CardSource.AI_IMAGE -> 2
+        CardSource.AI_DOC   -> 3
+        CardSource.AI_FILE  -> 4
+        CardSource.MANUAL   -> 5
+    }
+
+    private fun displayLabel(source: CardSource, sourceLabel: String?) = when {
+        sourceLabel != null -> sourceLabel
+        source == CardSource.MANUAL -> "Manually Added"
+        source == CardSource.AI_TOPIC -> "AI Topic"
+        source == CardSource.AI_PDF -> "PDF Import"
+        source == CardSource.AI_IMAGE -> "Image Import"
+        source == CardSource.AI_DOC -> "Document Import"
+        source == CardSource.AI_FILE -> "File Import"
+        else -> "Imported"
     }
 
     private fun emojiFor(source: CardSource) = when (source) {

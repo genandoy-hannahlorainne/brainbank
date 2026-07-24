@@ -47,4 +47,10 @@ data class Flashcard(
     val nextReviewDate: Long,
     /** Origin of this card — defaults to MANUAL for backward compatibility. */
     val source: CardSource = CardSource.MANUAL,
+    /**
+     * Human-readable label for the generation session.
+     * e.g. "Photosynthesis" for AI topic, "chapter3.pdf" for a file import.
+     * Null for manually added cards.
+     */
+    val sourceLabel: String? = null,
 )

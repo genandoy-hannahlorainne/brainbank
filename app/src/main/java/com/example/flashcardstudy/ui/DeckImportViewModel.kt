@@ -33,6 +33,7 @@ sealed class DeckImportStep {
     data class ReviewCards(
         val cards: List<GeneratedFlashcard>,
         val source: CardSource,
+        val sourceLabel: String? = null,
     ) : DeckImportStep()
 
     /** Cards saved successfully. */
@@ -55,7 +56,7 @@ class DeckImportViewModel(
     val uiState: StateFlow<DeckImportUiState> = _uiState.asStateFlow()
 
     /** Called from [FileUploadScreen] when the user taps Proceed. */
-    fun generateCards(extractedText: String, source: CardSource) {
+    fun generateCards(extractedText: String, source: CardSource, sourceLabel: String? = null) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(
                 step = DeckImportStep.Generating,
@@ -65,7 +66,7 @@ class DeckImportViewModel(
             result.fold(
                 onSuccess = { cards ->
                     _uiState.value = _uiState.value.copy(
-                        step = DeckImportStep.ReviewCards(cards, source),
+                        step = DeckImportStep.ReviewCards(cards, source, sourceLabel),
                     )
                 },
                 onFailure = { error ->
