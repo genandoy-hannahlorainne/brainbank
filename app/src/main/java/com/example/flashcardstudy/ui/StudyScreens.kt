@@ -276,6 +276,7 @@ fun CategoryListScreen(
                         modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp),
                         category = category,
                         onClick = { onCategorySelected(category) },
+                        onDelete = { viewModel.deleteCategory(category) },
                     )
                 }
 
@@ -507,9 +508,11 @@ internal fun DeckCard(
     modifier: Modifier = Modifier,
     category: Category,
     onClick: () -> Unit,
+    onDelete: (() -> Unit)? = null,
 ) {
     val accentColor = parseHexColor(category.colorHex)
     val deckIcon = deckIconFor(category.name)
+    var showDeleteConfirm by remember { mutableStateOf(false) }
 
     Card(
         modifier = modifier
@@ -520,7 +523,7 @@ internal fun DeckCard(
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
     ) {
         Row(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             // Icon badge
@@ -556,13 +559,54 @@ internal fun DeckCard(
                     ),
                 )
             }
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
-                modifier = Modifier.size(16.dp),
-            )
+            if (onDelete != null) {
+                IconButton(onClick = { showDeleteConfirm = true }) {
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = "Delete deck",
+                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f),
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+            } else {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
+                    modifier = Modifier.size(16.dp),
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+            }
         }
+    }
+
+    if (showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = { Text(text = "Delete \"${category.name}\"?", fontWeight = FontWeight.Bold) },
+            text = {
+                Text(text = "This will permanently delete the deck and all its cards. This cannot be undone.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteConfirm = false
+                        onDelete?.invoke()
+                    },
+                ) {
+                    Text(
+                        text = "Delete",
+                        color = MaterialTheme.colorScheme.error,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) {
+                    Text(text = "Cancel")
+                }
+            },
+        )
     }
 }
 
@@ -725,6 +769,7 @@ fun FlashcardListScreen(
                                 group = group,
                                 accentColor = accentColor,
                                 onClick = { onGroupSelected(group) },
+                                onDelete = { viewModel.deleteGroup(group) },
                             )
                         }
                         // Fill empty slot if odd number of groups
@@ -810,21 +855,36 @@ private fun SourceGroupCard(
     group: FlashcardGroup,
     accentColor: Color,
     onClick: () -> Unit,
+    onDelete: () -> Unit,
 ) {
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+
     Card(
-        modifier = modifier
-            .clickable(onClick = onClick),
+        modifier = modifier.clickable(onClick = onClick),
         shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = accentColor.copy(alpha = 0.10f),
-        ),
+        colors = CardDefaults.cardColors(containerColor = accentColor.copy(alpha = 0.10f)),
         elevation = CardDefaults.cardElevation(0.dp),
     ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Text(text = group.emoji, style = MaterialTheme.typography.headlineMedium)
+        Column(modifier = Modifier.padding(start = 16.dp, end = 8.dp, top = 14.dp, bottom = 14.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top,
+            ) {
+                Text(text = group.emoji, style = MaterialTheme.typography.headlineMedium)
+                IconButton(
+                    onClick = { showDeleteConfirm = true },
+                    modifier = Modifier.size(28.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = "Delete group",
+                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f),
+                        modifier = Modifier.size(16.dp),
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = group.label,
                 style = MaterialTheme.typography.titleSmall.copy(
@@ -832,8 +892,9 @@ private fun SourceGroupCard(
                     color = MaterialTheme.colorScheme.onSurface,
                 ),
                 maxLines = 2,
-                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                overflow = TextOverflow.Ellipsis,
             )
+            Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = "${group.cards.size} ${if (group.cards.size == 1) "card" else "cards"}",
                 style = MaterialTheme.typography.bodySmall.copy(
@@ -841,6 +902,42 @@ private fun SourceGroupCard(
                 ),
             )
         }
+    }
+
+    if (showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = {
+                Text(
+                    text = "Delete \"${group.label}\"?",
+                    fontWeight = FontWeight.Bold,
+                )
+            },
+            text = {
+                Text(
+                    text = "This will permanently delete all ${group.cards.size} ${if (group.cards.size == 1) "card" else "cards"} in this group. This cannot be undone.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteConfirm = false
+                        onDelete()
+                    },
+                ) {
+                    Text(
+                        text = "Delete",
+                        color = MaterialTheme.colorScheme.error,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) {
+                    Text(text = "Cancel")
+                }
+            },
+        )
     }
 }
 

@@ -27,6 +27,10 @@ open class StudyRepository(
         )
     }
 
+    open suspend fun deleteCategory(category: Category) {
+        categoryDao.delete(category)
+    }
+
     open suspend fun addFlashcard(
         categoryId: Long,
         question: String,
@@ -142,6 +146,10 @@ private class GuestStudyRepository(
         val id = nextCategoryId--
         guestCategories.value = guestCategories.value + Category(id = id, name = name.trim(), colorHex = colorHex)
         return id
+    }
+
+    override suspend fun deleteCategory(category: Category) {
+        guestCategories.value = guestCategories.value.filter { it.id != category.id }
     }
 
     override suspend fun addFlashcard(categoryId: Long, question: String, answer: String, source: CardSource, sourceLabel: String?): Long {

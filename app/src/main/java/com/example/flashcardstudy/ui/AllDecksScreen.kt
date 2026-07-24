@@ -140,6 +140,7 @@ fun AllDecksScreen(
                         modifier = Modifier.fillMaxWidth(),
                         category = category,
                         onClick = { onCategorySelected(category) },
+                        onDelete = { viewModel.deleteCategory(category) },
                     )
                 }
             }

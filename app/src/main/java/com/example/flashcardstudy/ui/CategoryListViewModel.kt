@@ -47,6 +47,13 @@ class CategoryListViewModel(
         }
     }
 
+    fun deleteCategory(category: Category) {
+        viewModelScope.launch {
+            repository.deleteCategory(category)
+            refreshCategories()
+        }
+    }
+
     class Factory(
         private val repository: StudyRepository,
     ) : ViewModelProvider.Factory {

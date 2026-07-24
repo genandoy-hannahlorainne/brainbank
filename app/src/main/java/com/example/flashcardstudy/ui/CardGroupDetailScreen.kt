@@ -63,6 +63,7 @@ fun CardGroupDetailScreen(
     var editingCardId by rememberSaveable { mutableStateOf<Long?>(null) }
     var question by rememberSaveable { mutableStateOf("") }
     var answer by rememberSaveable { mutableStateOf("") }
+    var showDeleteGroupConfirm by rememberSaveable { mutableStateOf(false) }
 
     val editingCard = group.cards.firstOrNull { it.id == editingCardId }
 
@@ -71,6 +72,11 @@ fun CardGroupDetailScreen(
             question = editingCard.question
             answer = editingCard.answer
         }
+    }
+
+    // Auto-navigate back when all cards in the group are deleted
+    LaunchedEffect(group.cards.size) {
+        if (group.cards.isEmpty()) onBack()
     }
 
     Scaffold(
@@ -110,6 +116,15 @@ fun CardGroupDetailScreen(
                                 Icons.AutoMirrored.Filled.ArrowBack,
                                 contentDescription = "Back",
                                 tint = Color.White,
+                            )
+                        }
+                    },
+                    actions = {
+                        IconButton(onClick = { showDeleteGroupConfirm = true }) {
+                            Icon(
+                                Icons.Default.Delete,
+                                contentDescription = "Delete all cards in group",
+                                tint = Color.White.copy(alpha = 0.85f),
                             )
                         }
                     },
@@ -197,6 +212,42 @@ fun CardGroupDetailScreen(
                     showEditor = false
                     editingCardId = null
                 }) { Text(text = "Cancel") }
+            },
+        )
+    }
+
+    if (showDeleteGroupConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteGroupConfirm = false },
+            title = {
+                Text(
+                    text = "Delete \"${group.label}\"?",
+                    fontWeight = FontWeight.Bold,
+                )
+            },
+            text = {
+                Text(
+                    text = "This will permanently delete all ${group.cards.size} ${if (group.cards.size == 1) "card" else "cards"} in this group. This cannot be undone.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteGroupConfirm = false
+                        viewModel.deleteGroup(group)
+                    },
+                ) {
+                    Text(
+                        text = "Delete all",
+                        color = MaterialTheme.colorScheme.error,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteGroupConfirm = false }) {
+                    Text(text = "Cancel")
+                }
             },
         )
     }

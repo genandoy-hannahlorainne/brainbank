@@ -73,6 +73,14 @@ class FlashcardListViewModel(
         }
     }
 
+    /** Delete all cards belonging to a specific group (source + sourceLabel). */
+    fun deleteGroup(group: FlashcardGroup) {
+        viewModelScope.launch {
+            group.cards.forEach { repository.deleteFlashcard(it) }
+            refreshFlashcards()
+        }
+    }
+
     // ── helpers ───────────────────────────────────────────────────────────────
 
     private fun buildGroups(
