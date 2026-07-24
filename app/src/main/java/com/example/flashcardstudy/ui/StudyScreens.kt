@@ -972,6 +972,22 @@ fun ReviewScreen(
     )
 }
 
+/** Overload for group-scoped review (reviews only cards from one source/topic group). */
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+fun ReviewScreen(
+    viewModel: GroupReviewViewModel,
+    onBack: () -> Unit,
+) {
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    ReviewScreenContent(
+        uiState = uiState,
+        onFlip = { viewModel.flipCard() },
+        onGrade = { viewModel.gradeCurrentCard(it) },
+        onBack = onBack,
+    )
+}
+
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
 private fun ReviewScreenContent(

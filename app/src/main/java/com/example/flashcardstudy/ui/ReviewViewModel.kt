@@ -124,3 +124,52 @@ class CategoryReviewViewModel(
             CategoryReviewViewModel(repository, categoryId) as T
     }
 }
+
+/**
+ * Reviews only the cards belonging to a specific source group (e.g. one AI topic session).
+ * Cards are passed in directly from the [FlashcardGroup] — no DB query needed.
+ */
+class GroupReviewViewModel(
+    private val repository: StudyRepository,
+    cards: List<com.example.flashcardstudy.data.Flashcard>,
+) : ViewModel() {
+
+    private val _uiState = MutableStateFlow(
+        ReviewUiState(
+            cards = cards,
+            currentIndex = 0,
+            isFlipped = false,
+            isFinished = cards.isEmpty(),
+        )
+    )
+    val uiState: StateFlow<ReviewUiState> = _uiState.asStateFlow()
+
+    fun flipCard() {
+        val state = _uiState.value
+        if (state.cards.isEmpty() || state.isFinished) return
+        _uiState.value = state.copy(isFlipped = !state.isFlipped)
+    }
+
+    fun gradeCurrentCard(grade: ReviewGrade) {
+        val state = _uiState.value
+        val currentCard = state.cards.getOrNull(state.currentIndex) ?: return
+        viewModelScope.launch {
+            repository.reviewFlashcard(currentCard, grade)
+            val nextIndex = state.currentIndex + 1
+            _uiState.value = if (nextIndex >= state.cards.size) {
+                state.copy(currentIndex = nextIndex, isFlipped = false, isFinished = true)
+            } else {
+                state.copy(currentIndex = nextIndex, isFlipped = false)
+            }
+        }
+    }
+
+    class Factory(
+        private val repository: StudyRepository,
+        private val cards: List<com.example.flashcardstudy.data.Flashcard>,
+    ) : ViewModelProvider.Factory {
+        @Suppress("UNCHECKED_CAST")
+        override fun <T : ViewModel> create(modelClass: Class<T>): T =
+            GroupReviewViewModel(repository, cards) as T
+    }
+}

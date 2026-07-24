@@ -58,6 +58,7 @@ fun CardGroupDetailScreen(
     accentColor: androidx.compose.ui.graphics.Color,
     viewModel: FlashcardListViewModel,
     onBack: () -> Unit,
+    onStartReview: () -> Unit = {},
 ) {
     var showEditor by rememberSaveable { mutableStateOf(false) }
     var editingCardId by rememberSaveable { mutableStateOf<Long?>(null) }
@@ -120,6 +121,9 @@ fun CardGroupDetailScreen(
                         }
                     },
                     actions = {
+                        TextButton(onClick = onStartReview) {
+                            Text(text = "Review", color = Color.White)
+                        }
                         IconButton(onClick = { showDeleteGroupConfirm = true }) {
                             Icon(
                                 Icons.Default.Delete,

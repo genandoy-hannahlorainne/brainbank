@@ -45,6 +45,7 @@ import com.example.flashcardstudy.ui.FileUploadScreen
 import com.example.flashcardstudy.ui.FlashcardListScreen
 import com.example.flashcardstudy.ui.FlashcardListViewModel
 import com.example.flashcardstudy.ui.GeneratingScreen
+import com.example.flashcardstudy.ui.GroupReviewViewModel
 import com.example.flashcardstudy.ui.ImportFlowStep
 import com.example.flashcardstudy.ui.ImportFlowViewModel
 import com.example.flashcardstudy.ui.NameDeckScreen
@@ -214,6 +215,7 @@ private fun MainContent(
 ) {
     var selectedCategory by remember { mutableStateOf<Category?>(null) }
     var selectedGroup by remember { mutableStateOf<com.example.flashcardstudy.ui.FlashcardGroup?>(null) }
+    var isReviewingGroup by remember { mutableStateOf(false) }
     var isShowingStats by remember { mutableStateOf(false) }
     var isImportingFile by remember { mutableStateOf(false) }
     var isImportingIntoDeck by remember { mutableStateOf(false) }
@@ -499,24 +501,45 @@ private fun MainContent(
                 }
             } else {
                 // ── Normal deck view ──────────────────────────────────────
-                BackHandler { selectedCategory = null; selectedGroup = null }
+                BackHandler { selectedCategory = null; selectedGroup = null; isReviewingGroup = false }
 
                 // ── Card group detail (tapped a source card) ──────────────
                 if (selectedGroup != null) {
                     val group = selectedGroup!!
-                    BackHandler { selectedGroup = null }
-                    CardGroupDetailScreen(
-                        group = group,
-                        accentColor = parseHexColor(category.colorHex),
-                        viewModel = vm,
-                        onBack = { selectedGroup = null },
-                    )
+                    BackHandler {
+                        isReviewingGroup = false
+                        selectedGroup = null
+                    }
+
+                    if (isReviewingGroup) {
+                        // ── Review only this group's cards ────────────────
+                        BackHandler { isReviewingGroup = false }
+                        val groupReviewVm = viewModel<GroupReviewViewModel>(
+                            key = "group-review-${group.source}-${group.sourceLabel}",
+                            factory = GroupReviewViewModel.Factory(
+                                effectiveRepository,
+                                group.cards,
+                            ),
+                        )
+                        ReviewScreen(
+                            viewModel = groupReviewVm,
+                            onBack = { isReviewingGroup = false },
+                        )
+                    } else {
+                        CardGroupDetailScreen(
+                            group = group,
+                            accentColor = parseHexColor(category.colorHex),
+                            viewModel = vm,
+                            onBack = { selectedGroup = null },
+                            onStartReview = { isReviewingGroup = true },
+                        )
+                    }
                 } else {
                     FlashcardListScreen(
                         category = category,
                         viewModel = vm,
                         onStartReview = { reviewingCategoryId = category.id },
-                        onBack = { selectedCategory = null; selectedGroup = null },
+                        onBack = { selectedCategory = null; selectedGroup = null; isReviewingGroup = false },
                         onAiGenerate = { showTopicDialog = true },
                         onImportFile = { isImportingIntoDeck = true },
                         onGroupSelected = { group -> selectedGroup = group },
