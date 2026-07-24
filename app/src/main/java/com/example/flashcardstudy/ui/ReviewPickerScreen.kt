@@ -8,19 +8,16 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -103,19 +100,33 @@ fun ReviewPickerScreen(
                 }
             }
         } else {
+            val chunked = items.chunked(2)
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(paddingValues)
                     .padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
                 contentPadding = PaddingValues(vertical = 16.dp),
             ) {
-                items(items, key = { it.category.id }) { item ->
-                    DeckRow(
-                        item = item,
-                        onClick = { onDeckSelected(item.category.id) },
-                    )
+                items(chunked.size, key = { chunked[it].first().category.id }) { idx ->
+                    val pair = chunked[idx]
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        pair.forEach { item ->
+                            ReviewDeckCard(
+                                modifier = Modifier.weight(1f),
+                                item = item,
+                                onClick = { if (item.dueCount > 0) onDeckSelected(item.category.id) },
+                            )
+                        }
+                        // Fill empty slot if odd number
+                        if (pair.size == 1) {
+                            Spacer(modifier = Modifier.weight(1f))
+                        }
+                    }
                 }
             }
         }
@@ -123,74 +134,78 @@ fun ReviewPickerScreen(
 }
 
 @Composable
-private fun DeckRow(
+private fun ReviewDeckCard(
+    modifier: Modifier = Modifier,
     item: CategoryWithDue,
     onClick: () -> Unit,
 ) {
     val accentColor = parseHexColor(item.category.colorHex)
+    val deckIcon = deckIconFor(item.category.name)
+    val isEnabled = item.dueCount > 0
+
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick, enabled = item.dueCount > 0),
-        shape = RoundedCornerShape(16.dp),
+        modifier = modifier
+            .aspectRatio(1f)
+            .clickable(enabled = isEnabled, onClick = onClick),
+        shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (item.dueCount > 0)
-                MaterialTheme.colorScheme.surface
+            containerColor = if (isEnabled)
+                accentColor.copy(alpha = 0.12f)
             else
-                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
         ),
-        elevation = CardDefaults.cardElevation(if (item.dueCount > 0) 1.dp else 0.dp),
+        elevation = CardDefaults.cardElevation(0.dp),
     ) {
-        Row(
-            modifier = Modifier.padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically,
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(14.dp),
+            verticalArrangement = Arrangement.SpaceBetween,
         ) {
+            // Icon badge
             Box(
                 modifier = Modifier
                     .size(40.dp)
                     .clip(RoundedCornerShape(12.dp))
-                    .background(accentColor.copy(alpha = 0.15f)),
+                    .background(
+                        if (isEnabled) accentColor.copy(alpha = 0.2f)
+                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f)
+                    ),
                 contentAlignment = Alignment.Center,
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(16.dp)
-                        .clip(CircleShape)
-                        .background(accentColor.copy(alpha = if (item.dueCount > 0) 1f else 0.4f)),
+                Icon(
+                    imageVector = deckIcon,
+                    contentDescription = null,
+                    tint = if (isEnabled) accentColor else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
+                    modifier = Modifier.size(22.dp),
                 )
             }
-            Spacer(modifier = Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
+
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
                     text = item.category.name,
                     style = MaterialTheme.typography.titleSmall.copy(
                         fontWeight = FontWeight.SemiBold,
-                        color = if (item.dueCount > 0)
+                        color = if (isEnabled)
                             MaterialTheme.colorScheme.onSurface
                         else
-                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
                     ),
-                    maxLines = 1,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = if (item.dueCount > 0)
-                        "${item.dueCount} ${if (item.dueCount == 1) "card" else "cards"} due"
+                    text = if (isEnabled)
+                        "${item.dueCount} due"
                     else
-                        "No cards due",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (item.dueCount > 0)
-                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                    else
-                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
-                )
-            }
-            if (item.dueCount > 0) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
-                    modifier = Modifier.size(14.dp),
+                        "All caught up",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        color = if (isEnabled)
+                            accentColor
+                        else
+                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f),
+                        fontWeight = FontWeight.Medium,
+                    ),
                 )
             }
         }
