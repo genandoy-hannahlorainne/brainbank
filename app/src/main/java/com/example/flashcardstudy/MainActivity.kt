@@ -285,7 +285,7 @@ private fun MainContent(
         // ── AI topic generation — review generated cards ─────────────────
         isAiGeneratingForDeck -> {
             BackHandler {}
-            GeneratingScreen()
+            GeneratingScreen(subtitle = "AI is writing cards for your topic…")
         }
 
         topicGenerateState is TopicGenerateState.Success && selectedCategory != null -> {
@@ -336,7 +336,7 @@ private fun MainContent(
 
                 is ImportFlowStep.Generating -> {
                     BackHandler {}
-                    GeneratingScreen()
+                    GeneratingScreen(subtitle = "AI is reading your document…")
                 }
 
                 is ImportFlowStep.NameDeck -> {
@@ -459,7 +459,7 @@ private fun MainContent(
 
                     is DeckImportStep.Generating -> {
                         BackHandler {}
-                        GeneratingScreen()
+                        GeneratingScreen(subtitle = "AI is reading your document…")
                     }
 
                     is DeckImportStep.ReviewCards -> {

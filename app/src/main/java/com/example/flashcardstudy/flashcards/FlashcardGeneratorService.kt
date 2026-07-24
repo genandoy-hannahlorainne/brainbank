@@ -7,22 +7,36 @@ import okhttp3.OkHttpClient
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import java.io.IOException
+import java.util.concurrent.TimeUnit
 
 class FlashcardGeneratorService(
     private val apiKey: String,
-    private val model: String = "llama-3.3-70b-versatile",
+    private val model: String = "llama-3.1-8b-instant",
     private val apiService: GroqApiService = defaultApiService(),
     private val gson: Gson = Gson(),
 ) {
-    suspend fun generateFlashcards(extractedText: String): Result<List<GeneratedFlashcard>> {
-        if (extractedText.isBlank()) {
-            return Result.failure(EmptySourceTextException())
-        }
 
+    // ── Public entry points ───────────────────────────────────────────────────
+
+    /** Generate cards from raw extracted document/image text. */
+    suspend fun generateFlashcards(extractedText: String): Result<List<GeneratedFlashcard>> {
+        if (extractedText.isBlank()) return Result.failure(EmptySourceTextException())
+        return runGeneration(buildDocumentRequest(extractedText))
+    }
+
+    /** Generate cards from a plain topic string (e.g. "Photosynthesis"). */
+    suspend fun generateFlashcardsForTopic(topic: String): Result<List<GeneratedFlashcard>> {
+        if (topic.isBlank()) return Result.failure(EmptySourceTextException())
+        return runGeneration(buildTopicRequest(topic))
+    }
+
+    // ── Core generation ───────────────────────────────────────────────────────
+
+    private suspend fun runGeneration(request: GroqChatRequest): Result<List<GeneratedFlashcard>> {
         return try {
             val response = apiService.chatCompletions(
                 bearerToken = "Bearer $apiKey",
-                body = buildRequest(extractedText),
+                body = request,
             )
 
             if (!response.isSuccessful) {
@@ -30,12 +44,9 @@ class FlashcardGeneratorService(
                 return Result.failure(
                     GeminiApiException(
                         buildString {
-                            append("Groq API request failed with HTTP ")
+                            append("Groq API error HTTP ")
                             append(response.code())
-                            if (errorBody.isNotBlank()) {
-                                append(": ")
-                                append(errorBody)
-                            }
+                            if (errorBody.isNotBlank()) append(": $errorBody")
                         }
                     )
                 )
@@ -51,79 +62,92 @@ class FlashcardGeneratorService(
                 .orEmpty()
 
             if (contentText.isBlank()) {
-                return Result.failure(
-                    MalformedFlashcardJsonException("Groq returned an empty response body.")
-                )
+                return Result.failure(MalformedFlashcardJsonException("Groq returned an empty response."))
             }
 
             val jsonText = extractJsonArray(contentText)
-            val flashcards = parseFlashcards(jsonText)
-            Result.success(flashcards)
-        } catch (exception: Exception) {
-            when (exception) {
+            Result.success(parseFlashcards(jsonText))
+        } catch (e: Exception) {
+            when (e) {
                 is MalformedFlashcardJsonException,
                 is EmptySourceTextException,
-                is GeminiApiException -> Result.failure(exception)
-                is JsonSyntaxException -> Result.failure(
-                    MalformedFlashcardJsonException("Malformed JSON returned by Groq.", exception)
-                )
-                is IOException -> Result.failure(
-                    GeminiApiException("Network or IO error while calling Groq.", exception)
-                )
-                else -> Result.failure(
-                    GeminiApiException("Unexpected flashcard generation error.", exception)
-                )
+                is GeminiApiException -> Result.failure(e)
+                is JsonSyntaxException -> Result.failure(MalformedFlashcardJsonException("Malformed JSON from Groq.", e))
+                is IOException -> Result.failure(GeminiApiException("Network error calling Groq.", e))
+                else -> Result.failure(GeminiApiException("Unexpected error during generation.", e))
             }
         }
     }
 
-    private fun buildRequest(extractedText: String): GroqChatRequest {
+    // ── Request builders ──────────────────────────────────────────────────────
+
+    private fun buildDocumentRequest(extractedText: String): GroqChatRequest {
         val systemPrompt = """
-            You are a study assistant. Given text from a student's course material, generate clear,
-            concise flashcard question-answer pairs that test understanding of key concepts,
-            definitions, and facts. Avoid overly simple or overly broad questions.
-            Return ONLY a JSON array — no markdown fences, no extra text — in this exact format:
-            [{"question": "...", "answer": "..."}]
-            Generate between 5 and 15 cards depending on how much material is present.
+            You are a flashcard generator. Given course material, output ONLY a JSON array of question-answer pairs. No markdown, no explanation.
+            Format: [{"question":"...","answer":"..."}]
+            Generate 5 to 10 cards covering key concepts and definitions.
+        """.trimIndent()
+
+        // Truncate long texts — 4000 chars is plenty for 5-10 cards
+        val truncated = extractedText.take(4000)
+
+        return GroqChatRequest(
+            model = model,
+            messages = listOf(
+                GroqMessage(role = "system", content = systemPrompt),
+                GroqMessage(role = "user", content = truncated),
+            ),
+        )
+    }
+
+    private fun buildTopicRequest(topic: String): GroqChatRequest {
+        val systemPrompt = """
+            You are a flashcard generator. Output ONLY a JSON array of question-answer pairs. No markdown, no explanation.
+            Format: [{"question":"...","answer":"..."}]
+            Generate 5 to 10 cards covering key concepts, definitions, and facts.
         """.trimIndent()
 
         return GroqChatRequest(
             model = model,
             messages = listOf(
                 GroqMessage(role = "system", content = systemPrompt),
-                GroqMessage(role = "user", content = "Text:\n$extractedText"),
+                GroqMessage(role = "user", content = "Topic: $topic"),
             ),
         )
     }
 
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
     private fun parseFlashcards(jsonText: String): List<GeneratedFlashcard> {
         val type = object : TypeToken<List<GeneratedFlashcard>>() {}.type
         val cards = gson.fromJson<List<GeneratedFlashcard>>(jsonText, type)
-        if (cards.isNullOrEmpty()) {
-            throw MalformedFlashcardJsonException("Groq returned no flashcards.")
-        }
+        if (cards.isNullOrEmpty()) throw MalformedFlashcardJsonException("Groq returned no flashcards.")
         return cards
     }
 
     private fun extractJsonArray(rawText: String): String {
-        // Strip markdown fences if the model adds them anyway
         val fencedMatch = Regex("```(?:json)?\\s*([\\s\\S]*?)\\s*```").find(rawText)
         val candidate = fencedMatch?.groupValues?.getOrNull(1)?.trim().orEmpty()
             .ifBlank { rawText.trim() }
 
-        val startIndex = candidate.indexOf('[')
-        val endIndex = candidate.lastIndexOf(']')
-        if (startIndex == -1 || endIndex == -1 || endIndex <= startIndex) {
-            throw MalformedFlashcardJsonException("Groq response did not contain a JSON array.")
+        val start = candidate.indexOf('[')
+        val end = candidate.lastIndexOf(']')
+        if (start == -1 || end == -1 || end <= start) {
+            throw MalformedFlashcardJsonException("Groq response had no JSON array.")
         }
-        return candidate.substring(startIndex, endIndex + 1)
+        return candidate.substring(start, end + 1)
     }
 
     companion object {
         private fun defaultApiService(): GroqApiService {
+            val client = OkHttpClient.Builder()
+                .connectTimeout(15, TimeUnit.SECONDS)
+                .readTimeout(30, TimeUnit.SECONDS)
+                .writeTimeout(15, TimeUnit.SECONDS)
+                .build()
             return Retrofit.Builder()
                 .baseUrl("https://api.groq.com/")
-                .client(OkHttpClient.Builder().build())
+                .client(client)
                 .addConverterFactory(GsonConverterFactory.create())
                 .build()
                 .create(GroqApiService::class.java)

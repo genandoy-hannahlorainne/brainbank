@@ -20,7 +20,9 @@ import com.example.flashcardstudy.ui.theme.BrandBackground
 import com.example.flashcardstudy.ui.theme.BrandPrimary
 
 @Composable
-fun GeneratingScreen() {
+fun GeneratingScreen(
+    subtitle: String = "This usually takes a few seconds…",
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -43,7 +45,7 @@ fun GeneratingScreen() {
         )
         Spacer(modifier = Modifier.height(8.dp))
         Text(
-            text = "AI is reading your document",
+            text = subtitle,
             style = MaterialTheme.typography.bodyMedium.copy(
                 color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.55f),
             ),

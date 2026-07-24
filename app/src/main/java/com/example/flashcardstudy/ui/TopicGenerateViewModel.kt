@@ -33,16 +33,7 @@ class TopicGenerateViewModel(
         viewModelScope.launch {
             _state.value = TopicGenerateState.Generating
 
-            // Build a prompt that asks the AI to create flashcards about the topic
-            val prompt = """
-                Generate flashcard question-answer pairs about the following topic: "$trimmed".
-                Cover key concepts, definitions, and important facts.
-                Return ONLY a JSON array — no markdown fences, no extra text — in this exact format:
-                [{"question": "...", "answer": "..."}]
-                Generate between 5 and 15 cards.
-            """.trimIndent()
-
-            val result = generatorService.generateFlashcards(prompt)
+            val result = generatorService.generateFlashcardsForTopic(trimmed)
             _state.value = result.fold(
                 onSuccess = { cards -> TopicGenerateState.Success(cards) },
                 onFailure = { error ->

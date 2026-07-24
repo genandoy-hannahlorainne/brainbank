@@ -5,8 +5,8 @@ package com.example.flashcardstudy.flashcards
 data class GroqChatRequest(
     val model: String,
     val messages: List<GroqMessage>,
-    val max_tokens: Int = 2000,
-    val temperature: Double = 0.7,
+    val max_tokens: Int = 1024,
+    val temperature: Double = 0.3,
 )
 
 data class GroqMessage(
