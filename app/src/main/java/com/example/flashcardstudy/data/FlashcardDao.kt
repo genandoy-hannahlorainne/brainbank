@@ -34,6 +34,9 @@ interface FlashcardDao {
     @Update
     suspend fun update(flashcard: Flashcard)
 
+    @Update
+    suspend fun updateAll(flashcards: List<Flashcard>)
+
     @Delete
     suspend fun delete(flashcard: Flashcard)
 }

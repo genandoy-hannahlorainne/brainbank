@@ -116,6 +116,10 @@ open class StudyRepository(
         flashcardDao.delete(flashcard)
     }
 
+    open suspend fun moveFlashcardsToCategory(flashcards: List<Flashcard>, targetCategoryId: Long) {
+        flashcardDao.updateAll(flashcards.map { it.copy(categoryId = targetCategoryId) })
+    }
+
     /** Returns a guest-mode wrapper that holds data in-memory only — nothing is written to Room. */
     fun asReadOnlyGuestRepository(): StudyRepository = GuestStudyRepository(categoryDao, flashcardDao, reviewLogDao)
 }
@@ -195,5 +199,12 @@ private class GuestStudyRepository(
 
     override suspend fun deleteFlashcard(flashcard: Flashcard) {
         guestFlashcards.value = guestFlashcards.value.filter { it.id != flashcard.id }
+    }
+
+    override suspend fun moveFlashcardsToCategory(flashcards: List<Flashcard>, targetCategoryId: Long) {
+        val ids = flashcards.map { it.id }.toSet()
+        guestFlashcards.value = guestFlashcards.value.map {
+            if (it.id in ids) it.copy(categoryId = targetCategoryId) else it
+        }
     }
 }

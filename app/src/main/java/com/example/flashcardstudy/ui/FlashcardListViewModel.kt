@@ -81,6 +81,14 @@ class FlashcardListViewModel(
         }
     }
 
+    /** Move all cards in a group to a different category. */
+    fun moveGroup(group: FlashcardGroup, targetCategoryId: Long) {
+        viewModelScope.launch {
+            repository.moveFlashcardsToCategory(group.cards, targetCategoryId)
+            refreshFlashcards()
+        }
+    }
+
     // ── helpers ───────────────────────────────────────────────────────────────
 
     private fun buildGroups(

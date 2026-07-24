@@ -1,6 +1,8 @@
 package com.example.flashcardstudy.ui
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -31,6 +33,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DriveFileMove
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.UploadFile
@@ -667,6 +670,7 @@ fun FlashcardListScreen(
     onAiGenerate: () -> Unit = {},
     onImportFile: () -> Unit = {},
     onGroupSelected: (FlashcardGroup) -> Unit = {},
+    categories: List<Category> = emptyList(),
 ) {
     val flashcards by viewModel.flashcards.collectAsStateWithLifecycle()
     val groups by viewModel.groups.collectAsStateWithLifecycle()
@@ -768,8 +772,11 @@ fun FlashcardListScreen(
                                 modifier = Modifier.weight(1f),
                                 group = group,
                                 accentColor = accentColor,
+                                categories = categories,
+                                currentCategoryId = category.id,
                                 onClick = { onGroupSelected(group) },
                                 onDelete = { viewModel.deleteGroup(group) },
+                                onMove = { targetId -> viewModel.moveGroup(group, targetId) },
                             )
                         }
                         // Fill empty slot if odd number of groups
@@ -849,18 +856,27 @@ fun FlashcardListScreen(
 
 // ─────────────────────────────────────────────────────────────────────────────
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun SourceGroupCard(
     modifier: Modifier = Modifier,
     group: FlashcardGroup,
     accentColor: Color,
+    categories: List<Category> = emptyList(),
+    currentCategoryId: Long = -1L,
     onClick: () -> Unit,
     onDelete: () -> Unit,
+    onMove: (Long) -> Unit = {},
 ) {
     var showDeleteConfirm by remember { mutableStateOf(false) }
+    var showMoveSheet by remember { mutableStateOf(false) }
+    var showContextMenu by remember { mutableStateOf(false) }
 
     Card(
-        modifier = modifier.clickable(onClick = onClick),
+        modifier = modifier.combinedClickable(
+            onClick = onClick,
+            onLongClick = { showContextMenu = true },
+        ),
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = accentColor.copy(alpha = 0.10f)),
         elevation = CardDefaults.cardElevation(0.dp),
@@ -904,38 +920,125 @@ private fun SourceGroupCard(
         }
     }
 
+    // ── Long-press context menu ───────────────────────────────────────────
+    if (showContextMenu) {
+        AlertDialog(
+            onDismissRequest = { showContextMenu = false },
+            title = { Text(text = group.label, fontWeight = FontWeight.SemiBold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(
+                        onClick = {
+                            showContextMenu = false
+                            showMoveSheet = true
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Icon(Icons.Default.DriveFileMove, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(text = "Move to another deck")
+                    }
+                    TextButton(
+                        onClick = {
+                            showContextMenu = false
+                            showDeleteConfirm = true
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.error)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(text = "Delete group", color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showContextMenu = false }) { Text(text = "Cancel") }
+            },
+        )
+    }
+
+    // ── Move to deck picker ───────────────────────────────────────────────
+    if (showMoveSheet) {
+        val otherDecks = categories.filter { it.id != currentCategoryId }
+        AlertDialog(
+            onDismissRequest = { showMoveSheet = false },
+            title = { Text(text = "Move to deck", fontWeight = FontWeight.SemiBold) },
+            text = {
+                if (otherDecks.isEmpty()) {
+                    Text(text = "No other decks available. Create another deck first.")
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            text = "Move ${group.cards.size} cards to:",
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                            ),
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        otherDecks.forEach { deck ->
+                            val deckAccent = parseHexColor(deck.colorHex)
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        showMoveSheet = false
+                                        onMove(deck.id)
+                                    },
+                                shape = RoundedCornerShape(12.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = deckAccent.copy(alpha = 0.10f),
+                                ),
+                                elevation = CardDefaults.cardElevation(0.dp),
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                ) {
+                                    Icon(
+                                        imageVector = deckIconFor(deck.name),
+                                        contentDescription = null,
+                                        tint = deckAccent,
+                                        modifier = Modifier.size(20.dp),
+                                    )
+                                    Text(
+                                        text = deck.name,
+                                        style = MaterialTheme.typography.titleSmall.copy(
+                                            fontWeight = FontWeight.Medium,
+                                        ),
+                                        modifier = Modifier.weight(1f),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showMoveSheet = false }) { Text(text = "Cancel") }
+            },
+        )
+    }
+
+    // ── Delete confirmation ───────────────────────────────────────────────
     if (showDeleteConfirm) {
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = false },
-            title = {
-                Text(
-                    text = "Delete \"${group.label}\"?",
-                    fontWeight = FontWeight.Bold,
-                )
-            },
+            title = { Text(text = "Delete \"${group.label}\"?", fontWeight = FontWeight.Bold) },
             text = {
-                Text(
-                    text = "This will permanently delete all ${group.cards.size} ${if (group.cards.size == 1) "card" else "cards"} in this group. This cannot be undone.",
-                )
+                Text(text = "This will permanently delete all ${group.cards.size} ${if (group.cards.size == 1) "card" else "cards"} in this group. This cannot be undone.")
             },
             confirmButton = {
-                TextButton(
-                    onClick = {
-                        showDeleteConfirm = false
-                        onDelete()
-                    },
-                ) {
-                    Text(
-                        text = "Delete",
-                        color = MaterialTheme.colorScheme.error,
-                        fontWeight = FontWeight.Bold,
-                    )
+                TextButton(onClick = { showDeleteConfirm = false; onDelete() }) {
+                    Text(text = "Delete", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showDeleteConfirm = false }) {
-                    Text(text = "Cancel")
-                }
+                TextButton(onClick = { showDeleteConfirm = false }) { Text(text = "Cancel") }
             },
         )
     }

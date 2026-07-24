@@ -591,6 +591,7 @@ private fun MainContent(
                         onAiGenerate = { showTopicDialog = true },
                         onImportFile = { isImportingIntoDeck = true },
                         onGroupSelected = { group -> selectedGroup = group },
+                        categories = categoryViewModel.categories.collectAsStateWithLifecycle().value,
                     )
                 }
             }
